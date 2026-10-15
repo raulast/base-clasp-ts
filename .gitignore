@@ -2,3 +2,5 @@ node_modules
 dist
 .clasp.json
 .env
+# Local Pi runtime state
+.atl/
