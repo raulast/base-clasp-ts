@@ -4,11 +4,17 @@ Base para desarrollar automatizaciones de **Google Apps Script** (Google Sheets,
 
 ## Requisitos previos
 
-- [Node.js](https://nodejs.org/) y [pnpm](https://pnpm.io/)
+- [Node.js](https://nodejs.org/)
+- [pnpm](https://pnpm.io/) instalado globalmente:
+
+  ```bash
+  npm install -g pnpm
+  ```
+
 - [clasp](https://github.com/google/clasp) instalado globalmente:
 
   ```bash
-  npm install -g @google/clasp
+  pnpm add -g @google/clasp
   ```
 
 - Cuenta de Google con la [API de Apps Script habilitada](https://script.google.com/home/usersettings) (activar "Google Apps Script API" en esa página).
