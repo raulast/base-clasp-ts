@@ -4,13 +4,14 @@
   "description": "repo base para trabajar con clasp y typescript",
   "main": "src/index.ts",
   "scripts": {
-    "build": "tsc",
-    "build:clean": "npm run clean && tsc",
-    "push": "clasp push",
-    "deploy": "npm run build:clean && clasp push",
-    "watch": "tsc -w",
-    "pull": "clasp pull",
-    "open": "clasp open"
+    "clean": "node -e \"const fs = require('fs'); if (fs.existsSync('dist')) fs.rmSync('dist', { recursive: true, force: true });\"",
+    "clasp:config": "node --experimental-strip-types setup-clasp.ts",
+    "build": "tsc && node -e \"const fs = require('fs'); if (fs.existsSync('src/appsscript.json')) fs.copyFileSync('src/appsscript.json', 'dist/appsscript.json');\"",
+    "build:clean": "pnpm clean && pnpm build",
+    "push": "pnpm clasp:config && clasp push",
+    "deploy": "pnpm build:clean && pnpm clasp:config && clasp push",
+    "pull": "pnpm clasp:config && clasp pull",
+    "open": "pnpm clasp:config && clasp open"
   },
   "keywords": [],
   "author": "",
@@ -25,6 +26,9 @@
   "type": "module",
   "devDependencies": {
     "@types/google-apps-script": "^2.0.13",
+    "@types/node": "^26.6.5",
+    "dotenv": "^18.0.8",
+    "ts-node": "^10.9.2",
     "typescript": "^7.0.2"
   }
 }

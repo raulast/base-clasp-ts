@@ -1,13 +1,16 @@
 {
   "compilerOptions": {
     "target": "es2019",
-    "module": "commonjs",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "moduleDetection": "legacy",
     "lib": ["es2019"],
     "outDir": "./dist",
     "rootDir": "./src",
     "experimentalDecorators": true,
     "esModuleInterop": true,
-    "strict": true
+    "strict": false,
+    "types": ["google-apps-script"]
   },
   "include": ["src/**/*"]
 }
