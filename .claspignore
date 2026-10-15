@@ -1,0 +1,27 @@
+# Ignorar dependencias y carpetas de desarrollo
+node_modules/**
+.git/**
+.vscode/**
+
+# Ignorar archivos de configuración local
+tsconfig.json
+package.json
+package-lock.json
+README.md
+
+# Ignorar TODOS los archivos de código fuente TypeScript (.ts)
+**/*.ts
+**/types/**
+
+# Ignorar archivos innecesarios que puedan colarse en la carpeta dist
+**/*.map
+**/*.ts
+Thumbs.db
+.DS_Store
+
+# Permitir explícitamente los archivos que definiste en tus extensiones
+!appsscript.json
+!**/*.js
+!**/*.gs
+!**/*.html
+!**/*.json
