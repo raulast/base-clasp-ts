@@ -12,6 +12,7 @@
     "build:clean": "pnpm clean && pnpm build",
     "push": "pnpm clasp:config && clasp push",
     "deploy": "pnpm build:clean && pnpm clasp:config && clasp push",
+    "migrate": "pnpm deploy && clasp run migrate",
     "pull": "pnpm clasp:config && clasp pull",
     "open": "pnpm clasp:config && clasp open"
   },
