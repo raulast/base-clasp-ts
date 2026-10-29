@@ -9,3 +9,6 @@ dist
 .clasprc.json
 client_secret*.json
 creds.json
+
+# ODD tracking notes (local only)
+odd/
