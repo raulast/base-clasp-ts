@@ -5,9 +5,10 @@
   "main": "src/index.ts",
   "scripts": {
     "clean": "node -e \"const fs = require('fs'); if (fs.existsSync('dist')) fs.rmSync('dist', { recursive: true, force: true });\"",
-    "test": "node --experimental-strip-types --test \"src/**/*.test.ts\"",
+    "test": "node --experimental-strip-types --test \"src/**/*.test.ts\" \"scripts/**/*.test.ts\"",
     "clasp:config": "node --experimental-strip-types setup-clasp.ts",
-    "build": "tsc && node -e \"const fs = require('fs'); if (fs.existsSync('src/appsscript.json')) fs.copyFileSync('src/appsscript.json', 'dist/appsscript.json');\"",
+    "typecheck": "tsc",
+    "build": "pnpm typecheck && node --experimental-strip-types scripts/build.ts",
     "build:clean": "pnpm clean && pnpm build",
     "push": "pnpm clasp:config && clasp push",
     "deploy": "pnpm build:clean && pnpm clasp:config && clasp push",
@@ -29,6 +30,7 @@
     "@types/google-apps-script": "^2.0.13",
     "@types/node": "^26.6.5",
     "dotenv": "^18.0.8",
+    "esbuild": "^0.28.2",
     "ts-node": "^10.9.2",
     "typescript": "^7.0.2"
   }
