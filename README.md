@@ -275,38 +275,93 @@ Todo lo que exportás desde `src/index.ts` queda como función global, y **cualq
 
 ## Ejecutar `migrate` y `createUser` desde la terminal
 
-`pnpm migrate` corre `clasp run migrate`, que llama a la función ya subida mediante la Apps Script Execution API. Para usarlo, clasp necesita **tus propias credenciales OAuth** (según la documentación de `clasp run`):
+`pnpm migrate` hace dos cosas: `pnpm deploy` (build + `clasp push`) y después `clasp run migrate`, que ejecuta la función ya subida a través de la **Apps Script Execution API**.
 
-1. Crear un proyecto en [Google Cloud Console](https://console.cloud.google.com/) y habilitar la **Apps Script API**.
-2. Crear un cliente OAuth de tipo **Aplicación de escritorio** y descargar el JSON (por ejemplo `client_secret.json` en la raíz del repo).
-3. Vincular el script a ese proyecto: en el editor, **Configuración del proyecto → Proyecto de Google Cloud Platform → Cambiar proyecto**, con el número del proyecto.
-4. Loguearte con esas credenciales y los scopes que usa el script:
+Son dos logins distintos:
+
+| Comando | Login que necesita |
+|---|---|
+| `clasp push`, `pull`, `open` | El `clasp login` normal (credenciales por defecto de clasp, en `~/.clasprc.json`) |
+| `clasp run` (y por lo tanto `pnpm migrate`) | `clasp login --creds` con **un cliente OAuth propio**, de un proyecto de Google Cloud **vinculado a tu script** |
+
+Por eso `pnpm deploy` puede funcionar y `pnpm migrate` fallar con:
+
+```
+Unable to run script function. Please make sure you have permission to run the script function.
+```
+
+Ese mensaje significa que la Execution API rechazó las credenciales (`NOT_AUTHORIZED`); tu función ni llegó a ejecutarse.
+
+### Configurar las credenciales (una sola vez por proyecto)
+
+1. **Proyecto de Google Cloud.** En [Google Cloud Console](https://console.cloud.google.com/), creá un proyecto (o usá uno tuyo). Anotá su **número de proyecto** (Panel → Información del proyecto); no confundir con el ID.
+2. **Habilitar la API.** En **APIs y servicios → Biblioteca**, buscá **Apps Script API** y habilitala.
+3. **Pantalla de consentimiento OAuth.** En **APIs y servicios → Pantalla de consentimiento de OAuth** (o **Google Auth Platform**), configurala. Si el tipo es **Externo**, agregá tu email en **Usuarios de prueba**; sin eso, el login falla con "acceso bloqueado".
+4. **Cliente OAuth.** En **APIs y servicios → Credenciales → Crear credenciales → ID de cliente de OAuth**, elegí el tipo **App de escritorio**. Descargá el JSON y guardalo en la raíz del repo como `client_secret.json`.
+5. **Vincular el script.** En el editor del script (`pnpm open`): **Configuración del proyecto → Proyecto de Google Cloud Platform (GCP) → Cambiar proyecto**, y pegá el **número** del paso 1.
+6. **Login con esas credenciales**, desde la raíz del repo, incluyendo los scopes que usa el script:
 
    ```bash
    clasp login --creds client_secret.json \
      --extra-scopes https://www.googleapis.com/auth/spreadsheets,https://www.googleapis.com/auth/userinfo.email
    ```
 
-5. Correr las migraciones:
+7. **Verificar.** Tiene que aparecer un `.clasprc.json` en la raíz del repo. Si no está, `clasp run` sigue usando las credenciales por defecto y va a fallar.
 
-   ```bash
-   pnpm migrate
+### Correr las migraciones y crear usuarios
+
+```bash
+pnpm migrate
+```
+
+```bash
+clasp run createUser -p '["vos@ejemplo.com", "un-password-largo", "tu-username"]'
+```
+
+El password del segundo comando queda en el historial de tu shell; borralo después.
+
+Antes de correrlos, cargá tu email en la Script Property `ADMIN_EMAILS`: si no, las dos funciones responden `Forbidden`.
+
+### Alternativa sin Google Cloud: correr las funciones desde el editor
+
+Si todavía no configuraste las credenciales, podés ejecutar a mano el código ya subido. Este camino está probado contra un proyecto real. En los dos casos tu email tiene que estar en la Script Property `ADMIN_EMAILS`.
+
+**`migrate`:**
+
+1. `pnpm deploy`.
+2. `pnpm open`, elegí `migrate` en el selector de funciones y tocá **Ejecutar**.
+3. La primera vez, aceptá los permisos que pide Google.
+
+**`createUser`:** el botón **Ejecutar** no pasa argumentos, así que hace falta una función temporal sin parámetros:
+
+1. En el editor, al final del archivo `bundle` (o en un archivo nuevo, **+ → Secuencia de comandos**), agregá:
+
+   ```javascript
+   function tmp() {
+     createUser('vos@ejemplo.com', 'un-password-largo', 'tu-username');
+   }
    ```
 
-6. Crear un usuario:
+2. Guardá, elegí `tmp` en el selector de funciones y tocá **Ejecutar**.
+3. **Borrá `tmp` enseguida y guardá.** Mientras exista, el password queda en texto plano en el código del proyecto. Además, como cualquier función global, `tmp` se puede invocar desde el navegador con `google.script.run` (`assertAdmin()` igual bloquea a quien no sea admin).
 
-   ```bash
-   clasp run createUser -p '["vos@ejemplo.com", "un-password-largo"]'
-   ```
+El próximo `pnpm deploy` reemplaza el bundle y elimina los archivos que no están en `dist/`, así que ese cambio manual no sobrevive a un deploy. No lo uses para nada permanente: el código permanente va en `src/`.
 
-   El password queda en el historial de tu shell; borralo después o cargá el usuario desde un script que lo pida por consola.
+### Errores comunes
 
-Notas:
+| Mensaje | Causa probable |
+|---|---|
+| `Unable to run script function. Please make sure you have permission...` | No hay `.clasprc.json` en el repo (falta el paso 6), o el cliente OAuth es de un proyecto de Cloud distinto al vinculado en el paso 5, o la Apps Script API no está habilitada en ese proyecto. |
+| `Script function not found. Please make sure script is deployed as API executable.` | La función no está en el bundle subido: corré `pnpm deploy` y revisá que esté exportada desde `src/index.ts`. |
+| `Forbidden` | Tu email no está en la Script Property `ADMIN_EMAILS`. |
+| `Missing script property: ...` | Falta cargar esa Script Property (ver "Configuración del proyecto"). |
+| Errores de permisos o scopes insuficientes | El login no incluye un scope que usa el script. Repetí el paso 6 sumando el scope a `--extra-scopes` (por ejemplo Drive, si lo agregás). |
 
-- `clasp login --creds` guarda un token en `.clasprc.json` dentro del proyecto. Ese archivo y los `client_secret*.json` están en `.gitignore`: **nunca los subas**.
+### Notas de seguridad
+
+- `.clasprc.json` contiene tu token de acceso y `client_secret.json` el secreto del cliente OAuth. Los dos están en `.gitignore`: **nunca los subas** (este repo es público).
 - `appsscript.json` declara `executionApi.access: "MYSELF"`, así que solo el dueño del script puede invocarlo por la API. La documentación de clasp muestra `ANYONE` en su ejemplo; si cambiás el acceso, `assertAdmin()` sigue protegiendo `migrate` y `createUser`.
-- Si `clasp run` falla por permisos, revisá que el login incluya todos los scopes que usa el script (por ejemplo, Drive si lo agregás).
-- Esta configuración se armó siguiendo la documentación de clasp 3, pero todavía no se probó contra un proyecto real.
+- Estos pasos siguen la documentación de clasp 3; el flujo completo de `clasp run` todavía no se probó de punta a punta contra un proyecto real.
 
 ## Tests
 
