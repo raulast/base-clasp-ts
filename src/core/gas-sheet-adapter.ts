@@ -8,7 +8,11 @@ import type { Row, SheetAdapter } from './sheet-adapter';
  * row, 1 because Sheets ranges are 1-indexed.
  */
 export class GasSheetAdapter implements SheetAdapter {
-  constructor(private readonly spreadsheetId?: string) {}
+  private readonly spreadsheetId?: string;
+
+  constructor(spreadsheetId?: string) {
+    this.spreadsheetId = spreadsheetId;
+  }
 
   private spreadsheet(): GoogleAppsScript.Spreadsheet.Spreadsheet {
     return this.spreadsheetId

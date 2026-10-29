@@ -1,0 +1,127 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { InMemorySheetAdapter } from './testing/in-memory-sheet-adapter.ts';
+import { Model } from './model.ts';
+
+const FIXED_NOW = () => new Date(1700000000000);
+
+test('create assigns an incrementing id and sets timestamps when the headers support them', () => {
+  const adapter = new InMemorySheetAdapter();
+  adapter.seed('users', ['id', 'email', 'created_at', 'updated_at'], [{ id: 1, email: 'a@a.com' }]);
+  const users = new Model('users', adapter, FIXED_NOW);
+
+  const created = users.create({ email: 'b@b.com' });
+
+  assert.equal(created.id, 2);
+  assert.equal(created.created_at, 1700000000000);
+  assert.equal(created.updated_at, 1700000000000);
+});
+
+test('create does not add timestamp fields the sheet headers do not have', () => {
+  const adapter = new InMemorySheetAdapter();
+  adapter.seed('users', ['id', 'email'], []);
+  const users = new Model('users', adapter, FIXED_NOW);
+
+  const created = users.create({ email: 'a@a.com' });
+
+  assert.equal('created_at' in created, false);
+  assert.equal('updated_at' in created, false);
+});
+
+test('all hides soft-deleted rows by default when the sheet has a deleted_at column', () => {
+  const adapter = new InMemorySheetAdapter();
+  adapter.seed('users', ['id', 'email', 'deleted_at'], [
+    { id: 1, email: 'a@a.com', deleted_at: null },
+    { id: 2, email: 'b@b.com', deleted_at: 1700000000000 },
+  ]);
+  const users = new Model('users', adapter, FIXED_NOW);
+
+  assert.deepEqual(users.all().map((row) => row.id), [1]);
+  assert.deepEqual(users.all({ includeDeleted: true }).map((row) => row.id), [1, 2]);
+});
+
+test('all returns every row when the sheet has no deleted_at column', () => {
+  const adapter = new InMemorySheetAdapter();
+  adapter.seed('users', ['id', 'email'], [{ id: 1, email: 'a@a.com' }, { id: 2, email: 'b@b.com' }]);
+  const users = new Model('users', adapter, FIXED_NOW);
+
+  assert.equal(users.all().length, 2);
+});
+
+test('find returns the matching row, or null when missing', () => {
+  const adapter = new InMemorySheetAdapter();
+  adapter.seed('users', ['id', 'email'], [{ id: 1, email: 'a@a.com' }]);
+  const users = new Model('users', adapter, FIXED_NOW);
+
+  assert.deepEqual(users.find(1), { id: 1, email: 'a@a.com' });
+  assert.equal(users.find(999), null);
+});
+
+test('find hides a soft-deleted row unless includeDeleted is set', () => {
+  const adapter = new InMemorySheetAdapter();
+  adapter.seed('users', ['id', 'email', 'deleted_at'], [{ id: 1, email: 'a@a.com', deleted_at: 1700000000000 }]);
+  const users = new Model('users', adapter, FIXED_NOW);
+
+  assert.equal(users.find(1), null);
+  assert.equal(users.find(1, { includeDeleted: true })?.id, 1);
+});
+
+test('update merges fields, bumps updated_at, and ignores an id in the payload', () => {
+  const adapter = new InMemorySheetAdapter();
+  adapter.seed('users', ['id', 'email', 'updated_at'], [{ id: 1, email: 'a@a.com', updated_at: 0 }]);
+  const users = new Model('users', adapter, FIXED_NOW);
+
+  const updated = users.update(1, { email: 'new@a.com', id: 999 });
+
+  assert.deepEqual(updated, { id: 1, email: 'new@a.com', updated_at: 1700000000000 });
+});
+
+test('update returns null for a missing id', () => {
+  const adapter = new InMemorySheetAdapter();
+  adapter.seed('users', ['id', 'email'], [{ id: 1, email: 'a@a.com' }]);
+  const users = new Model('users', adapter, FIXED_NOW);
+
+  assert.equal(users.update(999, { email: 'x' }), null);
+});
+
+test('delete soft-deletes when deleted_at exists, hiding the row from all() but keeping it in the sheet', () => {
+  const adapter = new InMemorySheetAdapter();
+  adapter.seed('users', ['id', 'email', 'deleted_at'], [{ id: 1, email: 'a@a.com', deleted_at: null }]);
+  const users = new Model('users', adapter, FIXED_NOW);
+
+  assert.equal(users.delete(1), true);
+  assert.equal(users.all().length, 0);
+  assert.equal(adapter.getRows('users').length, 1);
+  assert.equal(adapter.getRows('users')[0].deleted_at, 1700000000000);
+});
+
+test('delete hard-deletes when the sheet has no deleted_at column', () => {
+  const adapter = new InMemorySheetAdapter();
+  adapter.seed('users', ['id', 'email'], [{ id: 1, email: 'a@a.com' }]);
+  const users = new Model('users', adapter, FIXED_NOW);
+
+  assert.equal(users.delete(1), true);
+  assert.equal(adapter.getRows('users').length, 0);
+});
+
+test('delete returns false for a missing id', () => {
+  const adapter = new InMemorySheetAdapter();
+  adapter.seed('users', ['id', 'email'], [{ id: 1, email: 'a@a.com' }]);
+  const users = new Model('users', adapter, FIXED_NOW);
+
+  assert.equal(users.delete(999), false);
+});
+
+test('paginate slices rows and reports page metadata', () => {
+  const adapter = new InMemorySheetAdapter();
+  adapter.seed(
+    'users',
+    ['id'],
+    Array.from({ length: 5 }, (_, index) => ({ id: index + 1 })),
+  );
+  const users = new Model('users', adapter, FIXED_NOW);
+
+  const page = users.paginate(2, 2);
+
+  assert.deepEqual(page, { page: 2, perPage: 2, total: 5, pages: 3, data: [{ id: 3 }, { id: 4 }] });
+});
