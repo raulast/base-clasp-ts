@@ -4,3 +4,8 @@ dist
 .env
 # Local Pi runtime state
 .atl/
+
+# clasp run credentials (OAuth tokens and client secrets)
+.clasprc.json
+client_secret*.json
+creds.json
