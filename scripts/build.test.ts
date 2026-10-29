@@ -32,3 +32,24 @@ test('buildBundle emits a module-free bundle that exposes top-level functions in
 
   assert.ok(fs.existsSync(path.join(outdir, 'appsscript.json')));
 });
+
+test('buildBundle copies html views alongside their relative paths', async () => {
+  const srcdir = fs.mkdtempSync(path.join(os.tmpdir(), 'gas-src-'));
+  const outdir = fs.mkdtempSync(path.join(os.tmpdir(), 'gas-build-'));
+
+  fs.writeFileSync(path.join(srcdir, 'index.ts'), 'export function main() { return 1; }\n');
+  fs.mkdirSync(path.join(srcdir, 'app/views/partials'), { recursive: true });
+  fs.writeFileSync(path.join(srcdir, 'app/views/login.html'), '<p>login</p>');
+  fs.writeFileSync(path.join(srcdir, 'app/views/partials/header.html'), '<p>header</p>');
+
+  await buildBundle({ entry: path.join(srcdir, 'index.ts'), outdir });
+
+  assert.equal(
+    fs.readFileSync(path.join(outdir, 'app/views/login.html'), 'utf8'),
+    '<p>login</p>',
+  );
+  assert.equal(
+    fs.readFileSync(path.join(outdir, 'app/views/partials/header.html'), 'utf8'),
+    '<p>header</p>',
+  );
+});

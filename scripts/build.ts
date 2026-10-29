@@ -52,6 +52,24 @@ export async function buildBundle(options: BuildOptions): Promise<void> {
   if (fs.existsSync(appsscriptSrc)) {
     fs.copyFileSync(appsscriptSrc, path.join(outdir, 'appsscript.json'));
   }
+
+  copyHtmlFiles(entryDir, entryDir, outdir);
+}
+
+function copyHtmlFiles(dir: string, entryDir: string, outdir: string): void {
+  for (const entryName of fs.readdirSync(dir, { withFileTypes: true })) {
+    const fullPath = path.join(dir, entryName.name);
+    if (entryName.isDirectory()) {
+      copyHtmlFiles(fullPath, entryDir, outdir);
+      continue;
+    }
+    if (entryName.isFile() && fullPath.endsWith('.html')) {
+      const relativePath = path.relative(entryDir, fullPath);
+      const destPath = path.join(outdir, relativePath);
+      fs.mkdirSync(path.dirname(destPath), { recursive: true });
+      fs.copyFileSync(fullPath, destPath);
+    }
+  }
 }
 
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname);
