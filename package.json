@@ -5,6 +5,7 @@
   "main": "src/index.ts",
   "scripts": {
     "clean": "node -e \"const fs = require('fs'); if (fs.existsSync('dist')) fs.rmSync('dist', { recursive: true, force: true });\"",
+    "test": "node --experimental-strip-types --test \"src/**/*.test.ts\"",
     "clasp:config": "node --experimental-strip-types setup-clasp.ts",
     "build": "tsc && node -e \"const fs = require('fs'); if (fs.existsSync('src/appsscript.json')) fs.copyFileSync('src/appsscript.json', 'dist/appsscript.json');\"",
     "build:clean": "pnpm clean && pnpm build",

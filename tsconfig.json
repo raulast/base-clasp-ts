@@ -12,5 +12,6 @@
     "strict": true,
     "types": ["google-apps-script"]
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*"],
+  "exclude": ["src/**/*.test.ts", "src/core/testing/**"]
 }
