@@ -1,4 +1,65 @@
 import { buildGreetingMessage } from './utils.ts';
+import { requestFromEvent } from './core/http.ts';
+import { toGasOutput } from './core/view.ts';
+import { MigrationRunner } from './core/migration.ts';
+import { GasSheetAdapter } from './core/gas-sheet-adapter.ts';
+import { GasCryptoAdapter, getScriptSecret } from './core/gas-crypto-adapter.ts';
+import { GasOutputAdapter, includeHtml } from './core/gas-output-adapter.ts';
+import { createRouter } from './app/routes.ts';
+import { createUser as createUserWithAdapter } from './app/controllers/auth.controller.ts';
+import { migrations } from './app/migrations/index.ts';
+import { isAdmin } from './app/admin.ts';
+
+const adapter = new GasSheetAdapter();
+const crypto = new GasCryptoAdapter();
+
+function router() {
+  return createRouter({ adapter, crypto, getSecret: () => getScriptSecret('JWT_SECRET') });
+}
+
+function assertAdmin(): void {
+  const email = Session.getActiveUser().getEmail();
+  const adminEmails = getScriptSecret('ADMIN_EMAILS');
+  if (!isAdmin(email, adminEmails)) {
+    throw new Error('Forbidden');
+  }
+}
+
+export function doGet(e: GoogleAppsScript.Events.DoGet): GoogleAppsScript.HTML.HtmlOutput | GoogleAppsScript.Content.TextOutput {
+  const request = requestFromEvent(e, 'GET');
+  const response = router().dispatch(request);
+  return toGasOutput(response, new GasOutputAdapter()) as
+    | GoogleAppsScript.HTML.HtmlOutput
+    | GoogleAppsScript.Content.TextOutput;
+}
+
+export function doPost(e: GoogleAppsScript.Events.DoPost): GoogleAppsScript.HTML.HtmlOutput | GoogleAppsScript.Content.TextOutput {
+  const request = requestFromEvent(e, 'POST');
+  const response = router().dispatch(request);
+  return toGasOutput(response, new GasOutputAdapter()) as
+    | GoogleAppsScript.HTML.HtmlOutput
+    | GoogleAppsScript.Content.TextOutput;
+}
+
+export function api(path: string, body: Record<string, unknown> = {}): unknown {
+  const response = router().dispatch({ path, method: 'POST', params: {}, body });
+  return response.body;
+}
+
+export function include(name: string): string {
+  return includeHtml(name);
+}
+
+export function migrate(): string[] {
+  assertAdmin();
+  const runner = new MigrationRunner(migrations, adapter);
+  return runner.migrate();
+}
+
+export function createUser(email: string, password: string): unknown {
+  assertAdmin();
+  return createUserWithAdapter(adapter, crypto, email, password);
+}
 
 /**
  * Función principal ejecutable desde el editor de Google Apps Script o disparadores.

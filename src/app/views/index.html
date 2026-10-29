@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top" />
+  </head>
+  <body>
+    <?!= include('app/views/partials/header') ?>
+
+    <form id="login-form">
+      <input id="email" type="email" placeholder="Email" required />
+      <input id="password" type="password" placeholder="Password" required />
+      <button type="submit">Sign in</button>
+    </form>
+
+    <p id="welcome"></p>
+
+    <script>
+      document.getElementById('login-form').addEventListener('submit', function (event) {
+        event.preventDefault();
+        var email = document.getElementById('email').value;
+        var password = document.getElementById('password').value;
+
+        google.script.run
+          .withSuccessHandler(function (result) {
+            if (!result.token) {
+              return;
+            }
+            sessionStorage.setItem('token', result.token);
+            google.script.run
+              .withSuccessHandler(function (user) {
+                var welcome = document.getElementById('welcome');
+                welcome.textContent = user.email ? 'Welcome, ' + user.email : '';
+              })
+              .api('/me', { token: result.token });
+          })
+          .api('/login', { email: email, password: password });
+      });
+    </script>
+  </body>
+</html>

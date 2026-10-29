@@ -5,6 +5,7 @@ export interface Request {
   method: HttpMethod;
   params: Record<string, string>;
   body: Record<string, unknown>;
+  context?: Record<string, unknown>;
 }
 
 export interface Response {
