@@ -92,6 +92,8 @@ test('buildBundle of the real src/index.ts exposes every GAS global and bundles 
   }
 
   assert.ok(fs.existsSync(path.join(outdir, 'app/views/index.html')));
+  assert.ok(fs.existsSync(path.join(outdir, 'app/views/profile.html')));
+  assert.ok(fs.existsSync(path.join(outdir, 'app/views/partials/session.html')));
 });
 
 function adminSandbox(activeEmail: string, adminEmails: string): Record<string, unknown> {

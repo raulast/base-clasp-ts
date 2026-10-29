@@ -1,40 +1,119 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <base target="_top" />
+    <?!= include('app/views/partials/head') ?>
   </head>
   <body>
-    <?!= include('app/views/partials/header') ?>
+    <?!= include('app/views/partials/header', { appName: appName, appUrl: appUrl }) ?>
 
-    <form id="login-form">
-      <input id="email" type="email" placeholder="Email" required />
-      <input id="password" type="password" placeholder="Password" required />
-      <button type="submit">Sign in</button>
-    </form>
+    <main class="container">
+      <article id="login-card" hidden>
+        <header>
+          <h2>Sign in</h2>
+        </header>
+        <form id="login-form" novalidate>
+          <label for="email">
+            Email
+            <input id="email" name="email" type="email" autocomplete="email" required />
+          </label>
+          <label for="password">
+            Password
+            <input id="password" name="password" type="password" autocomplete="current-password" required />
+          </label>
+          <small id="login-error" role="alert"></small>
+          <button id="login-submit" type="submit">Sign in</button>
+        </form>
+      </article>
 
-    <p id="welcome"></p>
+      <article id="welcome-card" hidden>
+        <header>
+          <h2 id="welcome-title"></h2>
+        </header>
+        <p id="welcome-email"></p>
+        <a href="<?= appUrl ?>?route=/profile" role="button">Go to your profile</a>
+      </article>
 
+      <p id="loading" aria-busy="true">Loading…</p>
+    </main>
+
+    <?!= include('app/views/partials/session') ?>
     <script>
-      document.getElementById('login-form').addEventListener('submit', function (event) {
-        event.preventDefault();
-        var email = document.getElementById('email').value;
-        var password = document.getElementById('password').value;
+      var form = document.getElementById('login-form');
+      var emailInput = document.getElementById('email');
+      var passwordInput = document.getElementById('password');
+      var submit = document.getElementById('login-submit');
+      var errorBox = document.getElementById('login-error');
+      var loginCard = document.getElementById('login-card');
+      var welcomeCard = document.getElementById('welcome-card');
+      var loading = document.getElementById('loading');
 
+      function setBusy(busy) {
+        submit.disabled = busy;
+        submit.setAttribute('aria-busy', busy ? 'true' : 'false');
+      }
+
+      function showError(message) {
+        errorBox.textContent = message;
+        emailInput.setAttribute('aria-invalid', 'true');
+        passwordInput.setAttribute('aria-invalid', 'true');
+      }
+
+      function clearError() {
+        errorBox.textContent = '';
+        emailInput.removeAttribute('aria-invalid');
+        passwordInput.removeAttribute('aria-invalid');
+      }
+
+      function showLoggedIn(user) {
+        document.getElementById('welcome-title').textContent = 'Welcome, ' + (user.username || user.email);
+        document.getElementById('welcome-email').textContent = user.email;
+        loading.hidden = true;
+        loginCard.hidden = true;
+        welcomeCard.hidden = false;
+      }
+
+      function showLoginForm() {
+        loading.hidden = true;
+        welcomeCard.hidden = true;
+        loginCard.hidden = false;
+      }
+
+      form.addEventListener('submit', function (event) {
+        event.preventDefault();
+        clearError();
+        if (!emailInput.value || !passwordInput.value) {
+          showError('Enter your email and password.');
+          return;
+        }
+        setBusy(true);
         google.script.run
           .withSuccessHandler(function (result) {
-            if (!result.token) {
+            if (!result || !result.token) {
+              setBusy(false);
+              showError((result && result.error) || 'Could not sign in.');
               return;
             }
-            sessionStorage.setItem('token', result.token);
-            google.script.run
-              .withSuccessHandler(function (user) {
-                var welcome = document.getElementById('welcome');
-                welcome.textContent = user.email ? 'Welcome, ' + user.email : '';
-              })
-              .api('/me', { token: result.token });
+            AppSession.setToken(result.token);
+            AppSession.loadUser(
+              function (user) {
+                setBusy(false);
+                showLoggedIn(user);
+              },
+              function () {
+                setBusy(false);
+                showLoginForm();
+                showError('Could not load your account.');
+              },
+            );
           })
-          .api('/login', { email: email, password: password });
+          .withFailureHandler(function () {
+            setBusy(false);
+            showError('The server is not available. Try again later.');
+          })
+          .api('/login', { email: emailInput.value, password: passwordInput.value });
       });
+
+      AppSession.loadUser(showLoggedIn, showLoginForm);
     </script>
   </body>
 </html>

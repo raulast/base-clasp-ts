@@ -1,3 +1,12 @@
-<header>
-  <h1><?= appName ?></h1>
+<header class="container">
+  <nav>
+    <ul>
+      <li><a href="<?= appUrl ?>" class="contrast"><strong><?= appName ?></strong></a></li>
+    </ul>
+    <ul>
+      <li><a href="<?= appUrl ?>?route=/profile">Profile</a></li>
+      <li id="session-user" hidden></li>
+      <li><a id="logout" href="<?= appUrl ?>" role="button" class="secondary outline" hidden>Sign out</a></li>
+    </ul>
+  </nav>
 </header>

@@ -11,12 +11,24 @@ export interface RouterDeps {
   crypto: CryptoAdapter;
   getSecret: () => string;
   now?: () => Date;
+  // Views run inside a googleusercontent.com iframe, so links need the script's real URL.
+  getAppUrl?: () => string;
 }
 
-export function createRouter({ adapter, crypto, getSecret, now = () => new Date() }: RouterDeps): Router {
-  const router = new Router();
+const APP_NAME = 'Gas Fullstack Core';
 
-  router.get('/', () => view('app/views/index', { appName: 'Gas Fullstack Core' }));
+export function createRouter({
+  adapter,
+  crypto,
+  getSecret,
+  now = () => new Date(),
+  getAppUrl = () => '',
+}: RouterDeps): Router {
+  const router = new Router();
+  const page = (name: string) => () => view(name, { appName: APP_NAME, appUrl: getAppUrl() });
+
+  router.get('/', page('app/views/index'));
+  router.get('/profile', page('app/views/profile'));
 
   router.post('/login', (request) => {
     const email = String(request.body.email ?? '');

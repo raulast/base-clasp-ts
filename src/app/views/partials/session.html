@@ -1,0 +1,56 @@
+<script>
+  // Shared by every view: the JWT lives in sessionStorage and only travels in google.script.run bodies.
+  var AppSession = (function () {
+    var TOKEN_KEY = 'token';
+
+    function getToken() {
+      return sessionStorage.getItem(TOKEN_KEY);
+    }
+
+    function setToken(token) {
+      sessionStorage.setItem(TOKEN_KEY, token);
+    }
+
+    function clear() {
+      sessionStorage.removeItem(TOKEN_KEY);
+    }
+
+    function renderHeader(user) {
+      var label = document.getElementById('session-user');
+      var logout = document.getElementById('logout');
+      label.textContent = user ? user.username || user.email : '';
+      label.hidden = !user;
+      logout.hidden = !user;
+    }
+
+    function loadUser(onUser, onMissing) {
+      var token = getToken();
+      if (!token) {
+        renderHeader(null);
+        onMissing();
+        return;
+      }
+      var fail = function () {
+        clear();
+        renderHeader(null);
+        onMissing();
+      };
+      google.script.run
+        .withSuccessHandler(function (user) {
+          if (user && user.email) {
+            renderHeader(user);
+            onUser(user);
+          } else {
+            fail();
+          }
+        })
+        .withFailureHandler(fail)
+        .api('/me', { token: token });
+    }
+
+    // The Sign out link navigates to the login page; the token is cleared first.
+    document.getElementById('logout').addEventListener('click', clear);
+
+    return { getToken: getToken, setToken: setToken, clear: clear, loadUser: loadUser };
+  })();
+</script>

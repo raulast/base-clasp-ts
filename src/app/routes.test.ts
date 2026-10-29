@@ -198,3 +198,41 @@ test('createUser rejects a duplicate username without writing', () => {
   );
   assert.equal(adapter.getRows('users').length, 1);
 });
+
+function setupWithUrl() {
+  const adapter = new InMemorySheetAdapter();
+  adapter.seed('users', ['id', 'email', 'username', 'password', 'created_at', 'updated_at', 'deleted_at']);
+  const crypto = new NodeCryptoAdapter();
+  const router = createRouter({
+    adapter,
+    crypto,
+    getSecret: () => SECRET,
+    now: NOW,
+    getAppUrl: () => 'https://script.google.com/macros/s/ID/dev',
+  });
+  return { router };
+}
+
+test('GET / renders the index view with the app URL for navigation', () => {
+  const { router } = setupWithUrl();
+
+  const response = router.dispatch(request({ path: '/' }));
+
+  assert.deepEqual(response.body, {
+    kind: 'view',
+    name: 'app/views/index',
+    data: { appName: 'Gas Fullstack Core', appUrl: 'https://script.google.com/macros/s/ID/dev' },
+  });
+});
+
+test('GET /profile renders the profile view with the app URL for navigation', () => {
+  const { router } = setupWithUrl();
+
+  const response = router.dispatch(request({ path: '/profile' }));
+
+  assert.deepEqual(response.body, {
+    kind: 'view',
+    name: 'app/views/profile',
+    data: { appName: 'Gas Fullstack Core', appUrl: 'https://script.google.com/macros/s/ID/dev' },
+  });
+});

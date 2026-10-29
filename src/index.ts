@@ -14,7 +14,12 @@ const adapter = new GasSheetAdapter();
 const crypto = new GasCryptoAdapter();
 
 function router() {
-  return createRouter({ adapter, crypto, getSecret: () => getScriptSecret('JWT_SECRET') });
+  return createRouter({
+    adapter,
+    crypto,
+    getSecret: () => getScriptSecret('JWT_SECRET'),
+    getAppUrl: () => ScriptApp.getService().getUrl() ?? '',
+  });
 }
 
 function assertAdmin(): void {
@@ -46,8 +51,8 @@ export function api(path: string, body: Record<string, unknown> = {}): unknown {
   return response.body;
 }
 
-export function include(name: string): string {
-  return includeHtml(name);
+export function include(name: string, data: Record<string, unknown> = {}): string {
+  return includeHtml(name, data);
 }
 
 export function migrate(): string[] {

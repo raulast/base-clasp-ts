@@ -23,7 +23,15 @@ beforeEach(() => {
             if (prop === 'evaluate') {
               return () => {
                 template.evaluated = true;
-                return { getContent: () => `evaluated:${name}` };
+                const output = {
+                  metaTags: {} as Record<string, string>,
+                  getContent: () => `evaluated:${name}`,
+                  addMetaTag(tag: string, content: string) {
+                    output.metaTags[tag] = content;
+                    return output;
+                  },
+                };
+                return output;
               };
             }
             return template.assigned[prop];
@@ -77,6 +85,19 @@ test('json sets the JSON mime type', () => {
   assert.equal(result.mimeType, 'application/json');
 });
 
-test('includeHtml returns the file content', () => {
-  assert.equal(includeHtml('app/views/partials/header'), 'content:app/views/partials/header');
+test('includeHtml evaluates the partial as a template with the given data', () => {
+  const templates = globals.__fakeTemplates as Map<string, FakeTemplate>;
+
+  const content = includeHtml('app/views/partials/header', { appName: 'Demo' });
+
+  assert.equal(content, 'evaluated:app/views/partials/header');
+  assert.equal(templates.get('app/views/partials/header')?.assigned.appName, 'Demo');
+});
+
+test('renderView adds a responsive viewport meta tag (HtmlService ignores the one in the HTML)', () => {
+  const adapter = new GasOutputAdapter();
+
+  const result = adapter.renderView('login', {}) as unknown as { metaTags: Record<string, string> };
+
+  assert.equal(result.metaTags.viewport, 'width=device-width, initial-scale=1');
 });

@@ -8,7 +8,8 @@ export class GasOutputAdapter implements OutputAdapter {
     for (const [key, value] of Object.entries(data)) {
       template[key] = value;
     }
-    return template.evaluate();
+    // HtmlService drops <meta name="viewport"> written in the template; it must be set on the output.
+    return template.evaluate().addMetaTag('viewport', 'width=device-width, initial-scale=1');
   }
 
   json(data: unknown): GoogleAppsScript.Content.TextOutput {
@@ -16,6 +17,13 @@ export class GasOutputAdapter implements OutputAdapter {
   }
 }
 
-export function includeHtml(name: string): string {
-  return HtmlService.createHtmlOutputFromFile(name).getContent();
+// Partials are evaluated as templates so their scriptlets (e.g. <?= appName ?>) render.
+export function includeHtml(name: string, data: Record<string, unknown> = {}): string {
+  const template = HtmlService.createTemplateFromFile(name) as unknown as Record<string, unknown> & {
+    evaluate(): GoogleAppsScript.HTML.HtmlOutput;
+  };
+  for (const [key, value] of Object.entries(data)) {
+    template[key] = value;
+  }
+  return template.evaluate().getContent();
 }
