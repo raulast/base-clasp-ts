@@ -63,4 +63,23 @@ export class InMemorySheetAdapter implements SheetAdapter, SchemaAdapter {
     this.sheet(sheetName);
     this.sheets.delete(sheetName);
   }
+
+  addColumn(sheetName: string, column: string): void {
+    const sheet = this.sheet(sheetName);
+    if (sheet.headers.includes(column)) {
+      throw new Error(`Column already exists: ${sheetName}.${column}`);
+    }
+    sheet.headers = [...sheet.headers, column];
+  }
+
+  dropColumn(sheetName: string, column: string): void {
+    const sheet = this.sheet(sheetName);
+    if (!sheet.headers.includes(column)) {
+      throw new Error(`Unknown column: ${sheetName}.${column}`);
+    }
+    sheet.headers = sheet.headers.filter((header) => header !== column);
+    for (const row of sheet.rows) {
+      delete row[column];
+    }
+  }
 }

@@ -12,7 +12,7 @@ const NOW = () => new Date(1700000000000);
 
 function setup() {
   const adapter = new InMemorySheetAdapter();
-  adapter.seed('users', ['id', 'email', 'password', 'created_at', 'updated_at', 'deleted_at']);
+  adapter.seed('users', ['id', 'email', 'username', 'password', 'created_at', 'updated_at', 'deleted_at']);
   const crypto = new NodeCryptoAdapter();
   const router = createRouter({ adapter, crypto, getSecret: () => SECRET, now: NOW });
   return { adapter, crypto, router };
@@ -25,7 +25,7 @@ function request(overrides: Partial<Request> = {}): Request {
 test('createUser hashes the password and strips it from the returned row', () => {
   const { adapter, crypto } = setup();
 
-  const user = createUser(adapter, crypto, 'ana@example.com', 'secret', NOW);
+  const user = createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
 
   assert.equal(user.email, 'ana@example.com');
   assert.ok(!('password' in user));
@@ -35,14 +35,14 @@ test('createUser hashes the password and strips it from the returned row', () =>
 
 test('createUser rejects a duplicate email', () => {
   const { adapter, crypto } = setup();
-  createUser(adapter, crypto, 'ana@example.com', 'secret', NOW);
+  createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
 
-  assert.throws(() => createUser(adapter, crypto, 'ana@example.com', 'other', NOW));
+  assert.throws(() => createUser(adapter, crypto, 'ana@example.com', 'other', 'ana2', NOW));
 });
 
 test('POST /login returns a token for the right credentials', () => {
   const { adapter, crypto, router } = setup();
-  createUser(adapter, crypto, 'ana@example.com', 'secret', NOW);
+  createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
 
   const response = router.dispatch(
     request({ path: '/login', method: 'POST', body: { email: 'ana@example.com', password: 'secret' } }),
@@ -54,7 +54,7 @@ test('POST /login returns a token for the right credentials', () => {
 
 test('POST /login returns the same error for an unknown email and a wrong password', () => {
   const { adapter, crypto, router } = setup();
-  createUser(adapter, crypto, 'ana@example.com', 'secret', NOW);
+  createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
 
   const unknownEmail = router.dispatch(
     request({ path: '/login', method: 'POST', body: { email: 'nobody@example.com', password: 'secret' } }),
@@ -71,7 +71,7 @@ test('POST /login returns the same error for an unknown email and a wrong passwo
 
 test('POST /me returns the current user for a valid token, without password', () => {
   const { adapter, crypto, router } = setup();
-  createUser(adapter, crypto, 'ana@example.com', 'secret', NOW);
+  createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
   const loginResponse = router.dispatch(
     request({ path: '/login', method: 'POST', body: { email: 'ana@example.com', password: 'secret' } }),
   );
@@ -95,7 +95,7 @@ test('POST /me without a token is 401', () => {
 
 test('POST /me with a tampered token is 401', () => {
   const { adapter, crypto, router } = setup();
-  createUser(adapter, crypto, 'ana@example.com', 'secret', NOW);
+  createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
   const loginResponse = router.dispatch(
     request({ path: '/login', method: 'POST', body: { email: 'ana@example.com', password: 'secret' } }),
   );
@@ -117,7 +117,7 @@ test('there is no GET /me route', () => {
 
 test('/me with the token only in params (not body) is 401', () => {
   const { adapter, crypto, router } = setup();
-  createUser(adapter, crypto, 'ana@example.com', 'secret', NOW);
+  createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
   const loginResponse = router.dispatch(
     request({ path: '/login', method: 'POST', body: { email: 'ana@example.com', password: 'secret' } }),
   );
@@ -130,7 +130,7 @@ test('/me with the token only in params (not body) is 401', () => {
 
 test('/me with the token in the body via POST is OK', () => {
   const { adapter, crypto, router } = setup();
-  createUser(adapter, crypto, 'ana@example.com', 'secret', NOW);
+  createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
   const loginResponse = router.dispatch(
     request({ path: '/login', method: 'POST', body: { email: 'ana@example.com', password: 'secret' } }),
   );
@@ -143,7 +143,7 @@ test('/me with the token in the body via POST is OK', () => {
 
 test('no response from login or me ever contains a password field', () => {
   const { adapter, crypto, router } = setup();
-  createUser(adapter, crypto, 'ana@example.com', 'secret', NOW);
+  createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
   const loginResponse = router.dispatch(
     request({ path: '/login', method: 'POST', body: { email: 'ana@example.com', password: 'secret' } }),
   );
@@ -164,4 +164,37 @@ test('verifying a seeded hashPassword value works end to end for login', () => {
   );
 
   assert.equal(response.status, 200);
+});
+
+test('createUser stores the username', () => {
+  const { adapter, crypto } = setup();
+
+  const user = createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
+
+  assert.equal(user.username, 'ana');
+  assert.equal(adapter.getRows('users')[0].username, 'ana');
+});
+
+test('POST /me returns the username of the logged-in user', () => {
+  const { adapter, crypto, router } = setup();
+  createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
+  const loginResponse = router.dispatch(
+    request({ path: '/login', method: 'POST', body: { email: 'ana@example.com', password: 'secret' } }),
+  );
+  const token = (loginResponse.body as { token: string }).token;
+
+  const response = router.dispatch(request({ path: '/me', method: 'POST', body: { token } }));
+
+  assert.equal((response.body as { username?: string }).username, 'ana');
+});
+
+test('createUser rejects a duplicate username without writing', () => {
+  const { adapter, crypto } = setup();
+  createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
+
+  assert.throws(
+    () => createUser(adapter, crypto, 'other@example.com', 'secret', 'ana', NOW),
+    /Username already taken/,
+  );
+  assert.equal(adapter.getRows('users').length, 1);
 });

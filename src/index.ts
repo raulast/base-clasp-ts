@@ -56,9 +56,9 @@ export function migrate(): string[] {
   return runner.migrate();
 }
 
-export function createUser(email: string, password: string): unknown {
+export function createUser(email: string, password: string, username: string): unknown {
   assertAdmin();
-  return createUserWithAdapter(adapter, crypto, email, password);
+  return createUserWithAdapter(adapter, crypto, email, password, username);
 }
 
 /**

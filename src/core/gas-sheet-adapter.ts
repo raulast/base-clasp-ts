@@ -87,4 +87,21 @@ export class GasSheetAdapter implements SheetAdapter, SchemaAdapter {
   dropSheet(sheetName: string): void {
     this.spreadsheet().deleteSheet(this.sheet(sheetName));
   }
+
+  addColumn(sheetName: string, column: string): void {
+    const { headers } = this.readAll(sheetName);
+    if (headers.includes(column)) {
+      throw new Error(`Column already exists: ${sheetName}.${column}`);
+    }
+    this.sheet(sheetName).getRange(1, headers.length + 1).setValue(column);
+  }
+
+  dropColumn(sheetName: string, column: string): void {
+    const { headers } = this.readAll(sheetName);
+    const index = headers.indexOf(column);
+    if (index === -1) {
+      throw new Error(`Unknown column: ${sheetName}.${column}`);
+    }
+    this.sheet(sheetName).deleteColumn(index + 1);
+  }
 }

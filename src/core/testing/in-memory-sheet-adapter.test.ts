@@ -94,3 +94,31 @@ test('dropSheet throws for an unknown sheet', () => {
   const adapter = new InMemorySheetAdapter();
   assert.throws(() => adapter.dropSheet('ghost'), Error);
 });
+
+test('addColumn appends a header and keeps existing rows', () => {
+  const adapter = new InMemorySheetAdapter();
+  adapter.seed('users', ['id', 'email'], [{ id: 1, email: 'a@a.com' }]);
+  adapter.addColumn('users', 'username');
+  assert.deepEqual(adapter.getHeaders('users'), ['id', 'email', 'username']);
+  assert.deepEqual(adapter.getRows('users'), [{ id: 1, email: 'a@a.com' }]);
+});
+
+test('addColumn throws when the column already exists', () => {
+  const adapter = new InMemorySheetAdapter();
+  adapter.seed('users', ['id', 'email']);
+  assert.throws(() => adapter.addColumn('users', 'email'), /Column already exists: users\.email/);
+});
+
+test('dropColumn removes the header and its values from every row', () => {
+  const adapter = new InMemorySheetAdapter();
+  adapter.seed('users', ['id', 'username'], [{ id: 1, username: 'ana' }]);
+  adapter.dropColumn('users', 'username');
+  assert.deepEqual(adapter.getHeaders('users'), ['id']);
+  assert.deepEqual(adapter.getRows('users'), [{ id: 1 }]);
+});
+
+test('dropColumn throws for an unknown column', () => {
+  const adapter = new InMemorySheetAdapter();
+  adapter.seed('users', ['id']);
+  assert.throws(() => adapter.dropColumn('users', 'ghost'), /Unknown column: users\.ghost/);
+});

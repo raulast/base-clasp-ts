@@ -29,6 +29,7 @@ export function createUser(
   crypto: CryptoAdapter,
   email: string,
   password: string,
+  username: string,
   now: () => Date = () => new Date(),
 ): Row {
   const model = usersModel(adapter, now);
@@ -36,7 +37,10 @@ export function createUser(
   if (existing.length > 0) {
     throw new Error('Email already registered');
   }
-  const created = model.create({ email, password: hashPassword(password, crypto) });
+  if (model.all({ where: (row) => row.username === username }).length > 0) {
+    throw new Error('Username already taken');
+  }
+  const created = model.create({ email, username, password: hashPassword(password, crypto) });
   return sanitizeUser(created);
 }
 

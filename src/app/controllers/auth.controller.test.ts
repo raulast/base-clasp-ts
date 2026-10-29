@@ -23,9 +23,9 @@ function countingCrypto(delegate: CryptoAdapter) {
 
 test('login does equal HMAC work for an unknown email and a wrong password', () => {
   const adapter = new InMemorySheetAdapter();
-  adapter.seed('users', ['id', 'email', 'password', 'created_at', 'updated_at', 'deleted_at']);
+  adapter.seed('users', ['id', 'email', 'username', 'password', 'created_at', 'updated_at', 'deleted_at']);
   const crypto = new NodeCryptoAdapter();
-  createUser(adapter, crypto, 'ana@example.com', 'secret', NOW);
+  createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
 
   const counter = countingCrypto(crypto);
   login(adapter, counter.adapter, 'secret', 'warm-the-dummy-hash-cache@example.com', 'whatever', NOW);
