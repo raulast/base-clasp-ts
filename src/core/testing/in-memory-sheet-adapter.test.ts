@@ -61,3 +61,36 @@ test('getRows throws for an unknown sheet', () => {
   const adapter = new InMemorySheetAdapter();
   assert.throws(() => adapter.getRows('ghost'), Error);
 });
+
+test('sheetExists reflects whether the sheet has been seeded or created', () => {
+  const adapter = new InMemorySheetAdapter();
+  assert.equal(adapter.sheetExists('users'), false);
+  adapter.seed('users', ['id']);
+  assert.equal(adapter.sheetExists('users'), true);
+});
+
+test('createSheet makes a new, empty sheet with the given headers', () => {
+  const adapter = new InMemorySheetAdapter();
+  adapter.createSheet('users', ['id', 'email']);
+  assert.equal(adapter.sheetExists('users'), true);
+  assert.deepEqual(adapter.getHeaders('users'), ['id', 'email']);
+  assert.deepEqual(adapter.getRows('users'), []);
+});
+
+test('createSheet throws when the sheet already exists', () => {
+  const adapter = new InMemorySheetAdapter();
+  adapter.createSheet('users', ['id']);
+  assert.throws(() => adapter.createSheet('users', ['id']), Error);
+});
+
+test('dropSheet removes an existing sheet', () => {
+  const adapter = new InMemorySheetAdapter();
+  adapter.createSheet('users', ['id']);
+  adapter.dropSheet('users');
+  assert.equal(adapter.sheetExists('users'), false);
+});
+
+test('dropSheet throws for an unknown sheet', () => {
+  const adapter = new InMemorySheetAdapter();
+  assert.throws(() => adapter.dropSheet('ghost'), Error);
+});

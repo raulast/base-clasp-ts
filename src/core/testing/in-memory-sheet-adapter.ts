@@ -1,6 +1,7 @@
 import type { Row, SheetAdapter } from '../sheet-adapter';
+import type { SchemaAdapter } from '../schema-adapter';
 
-export class InMemorySheetAdapter implements SheetAdapter {
+export class InMemorySheetAdapter implements SheetAdapter, SchemaAdapter {
   private readonly sheets = new Map<string, { headers: string[]; rows: Row[] }>();
 
   seed(sheetName: string, headers: string[], rows: Row[] = []): void {
@@ -45,5 +46,21 @@ export class InMemorySheetAdapter implements SheetAdapter {
       throw new RangeError(`Row index out of range: ${rowIndex}`);
     }
     sheet.rows.splice(rowIndex, 1);
+  }
+
+  sheetExists(sheetName: string): boolean {
+    return this.sheets.has(sheetName);
+  }
+
+  createSheet(sheetName: string, headers: string[]): void {
+    if (this.sheets.has(sheetName)) {
+      throw new Error(`Sheet already exists: ${sheetName}`);
+    }
+    this.sheets.set(sheetName, { headers, rows: [] });
+  }
+
+  dropSheet(sheetName: string): void {
+    this.sheet(sheetName);
+    this.sheets.delete(sheetName);
   }
 }

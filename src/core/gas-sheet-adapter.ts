@@ -1,4 +1,5 @@
 import type { Row, SheetAdapter } from './sheet-adapter';
+import type { SchemaAdapter } from './schema-adapter';
 
 /**
  * One SpreadsheetApp read/write per call, matching the documented Apps
@@ -7,7 +8,7 @@ import type { Row, SheetAdapter } from './sheet-adapter';
  * getRows), translated to a real sheet row by adding 2: 1 for the header
  * row, 1 because Sheets ranges are 1-indexed.
  */
-export class GasSheetAdapter implements SheetAdapter {
+export class GasSheetAdapter implements SheetAdapter, SchemaAdapter {
   private readonly spreadsheetId?: string;
 
   constructor(spreadsheetId?: string) {
@@ -72,5 +73,18 @@ export class GasSheetAdapter implements SheetAdapter {
       throw new RangeError(`Row index out of range: ${rowIndex}`);
     }
     this.sheet(sheetName).deleteRow(rowIndex + 2);
+  }
+
+  sheetExists(sheetName: string): boolean {
+    return this.spreadsheet().getSheetByName(sheetName) !== null;
+  }
+
+  createSheet(sheetName: string, headers: string[]): void {
+    const sheet = this.spreadsheet().insertSheet(sheetName);
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  }
+
+  dropSheet(sheetName: string): void {
+    this.spreadsheet().deleteSheet(this.sheet(sheetName));
   }
 }
