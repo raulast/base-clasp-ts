@@ -234,11 +234,15 @@ Los templates van en `src/app/views/` y se devuelven con `view(nombre, datos)`; 
 
 ```html
 <h1><?= appName ?></h1>
-<?!= include('app/views/partials/header') ?>
+<?!= include('app/views/partials/header', { appName: appName, appUrl: appUrl }) ?>
 ```
 
 - `<?= ... ?>` escapa HTML: usalo para cualquier dato.
 - `<?!= ... ?>` no escapa: usalo solo para `include` de parciales, nunca con datos del usuario.
+- `include(nombre, datos)` evalúa el parcial como template: sus scriptlets solo ven los `datos` que le pases, no las variables de la vista que lo incluye.
+- La app de ejemplo trae dos vistas, `/` (login) y `/profile`, y tres parciales: `head` (Pico CSS), `header` (navegación) y `session` (manejo del token).
+- **Links entre vistas:** la web app corre dentro de un iframe de `googleusercontent.com`, así que un link relativo como `?route=/profile` no apunta a tu script. Cada vista recibe `appUrl` (`ScriptApp.getService().getUrl()`, que en `/dev` devuelve la URL `/dev`) y los links se arman así: `<a href="<?= appUrl ?>?route=/profile">`.
+- **Sesión compartida:** el parcial `session` expone `AppSession` (`getToken`, `setToken`, `clear`, `loadUser`). El token vive en `sessionStorage`, que se comparte entre las vistas de la misma pestaña y se borra al cerrarla. Una vista protegida solo hace `AppSession.loadUser(mostrarDatos, mostrarLogin)`, y `loadUser` valida el token contra `POST /me`.
 - Desde el navegador, hablá con el servidor con `google.script.run.api(ruta, body)`, que pasa por el mismo router y middleware y devuelve el `body` de la respuesta:
 
   ```javascript
@@ -272,6 +276,16 @@ Todo lo que exportás desde `src/index.ts` queda como función global, y **cualq
 2. En el editor (`pnpm open`): **Implementar → Nueva implementación → Aplicación web**.
 3. Elegí **Ejecutar como** y **Quién tiene acceso** según tu caso. Con "Ejecutar como: yo", la app lee y escribe las sheets con tus permisos.
 4. Abrí la URL `.../exec`: `GET /` muestra la pantalla de login de ejemplo.
+
+La URL `/exec` queda fija en la versión con la que la creaste: `pnpm deploy` actualiza el código del proyecto (lo que ves en `/dev`), pero no las implementaciones. Para publicar los cambios en `/exec`:
+
+```bash
+pnpm deploy
+clasp list-deployments                        # el ID es el que aparece en la URL /exec
+clasp redeploy <deploymentId> --description "qué cambió"
+```
+
+`redeploy` crea una versión nueva y apunta la implementación a ella, sin cambiar la URL.
 
 ## Ejecutar `migrate` y `createUser` desde la terminal
 
@@ -354,6 +368,7 @@ El próximo `pnpm deploy` reemplaza el bundle y elimina los archivos que no est�
 | `Unable to run script function. Please make sure you have permission...` | No hay `.clasprc.json` en el repo (falta el paso 6), o el cliente OAuth es de un proyecto de Cloud distinto al vinculado en el paso 5, o la Apps Script API no está habilitada en ese proyecto. |
 | `Script function not found. Please make sure script is deployed as API executable.` | La función no está en el bundle subido: corré `pnpm deploy` y revisá que esté exportada desde `src/index.ts`. |
 | `Forbidden` | Tu email no está en la Script Property `ADMIN_EMAILS`. |
+| `pnpm deploy` termina con `Skipping push.` y no se ve ningún cambio | El `appsscript.json` remoto cambió (por ejemplo, al crear una implementación de web app, Google agrega un bloque `webapp`). clasp pregunta si sobrescribirlo y la respuesta por defecto es **No**, así que no sube nada. Copiá ese cambio a `src/appsscript.json` para que coincidan y volvé a correr `pnpm deploy`. Para ver el manifest remoto, usá `pnpm open` → **Configuración del proyecto → Mostrar el archivo de manifiesto**. |
 | `Missing script property: ...` | Falta cargar esa Script Property (ver "Configuración del proyecto"). |
 | Errores de permisos o scopes insuficientes | El login no incluye un scope que usa el script. Repetí el paso 6 sumando el scope a `--extra-scopes` (por ejemplo Drive, si lo agregás). |
 
