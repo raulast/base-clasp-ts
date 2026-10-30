@@ -327,6 +327,40 @@ Si el `appsscript.json` remoto cambió (por ejemplo, Google agrega un bloque `we
 pnpm run deploy --force --description "force push after manifest change"
 ```
 
+### Quién puede abrir la web app (`access` y `executeAs`)
+
+Se configura en el bloque `webapp` de `src/appsscript.json`:
+
+```json
+"webapp": {
+  "executeAs": "USER_DEPLOYING",
+  "access": "ANYONE_ANONYMOUS"
+}
+```
+
+`webapp.access` define quién puede abrir la URL:
+
+| Valor | En el editor figura como | Quién entra |
+|---|---|---|
+| `MYSELF` | Solo yo | Solo el dueño del script |
+| `DOMAIN` | Cualquier usuario de tu dominio | Solo cuentas de tu Google Workspace (no disponible con cuentas Gmail personales) |
+| `ANYONE` | Cualquier usuario con una cuenta de Google | Cualquiera con su cuenta de Google iniciada |
+| `ANYONE_ANONYMOUS` | Cualquier usuario | Cualquiera, sin iniciar sesión en Google |
+
+`webapp.executeAs` define con qué permisos corre el script:
+
+| Valor | Corre como | Cuándo usarlo |
+|---|---|---|
+| `USER_DEPLOYING` | El dueño del script | Para esta app: las sheets se leen y escriben con tus permisos y los visitantes no necesitan acceso a ellas |
+| `USER_ACCESSING` | Quien abre la URL | Cuando cada usuario debe operar sobre sus propios archivos. Cada visitante necesita acceso a la sheet y autorizar el script; no es compatible con `ANYONE_ANONYMOUS` |
+
+La app de ejemplo usa `USER_DEPLOYING` + `ANYONE_ANONYMOUS`: el login lo resuelve la propia app (usuarios en la sheet y JWT), así que los visitantes no necesitan cuenta de Google. `migrate` y `createUser` siguen protegidos, porque un visitante anónimo no tiene email y `assertAdmin()` lo rechaza.
+
+Para cambiarlo, editá `src/appsscript.json` y corré `pnpm run deploy`: el redeploy publica una versión nueva con ese manifest. **No lo cambies desde el editor de Apps Script** (Administrar implementaciones): eso modifica el manifest remoto y el próximo deploy frena con `Skipping push.`.
+
+`executionApi.access` admite los mismos cuatro valores, pero define quién puede invocar funciones con `clasp run`. Dejalo en `MYSELF`.
+
+
 ## Ejecutar `migrate` y `createUser` desde la terminal
 
 `pnpm migrate` hace dos cosas: build + `clasp push` (sin redeploy, equivalente a `pnpm run deploy --push-only`) y después `clasp run migrate`, que ejecuta la función ya subida a través de la **Apps Script Execution API**.
