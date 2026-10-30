@@ -73,6 +73,14 @@ https://script.google.com/home/projects/<SCRIPT_ID>/edit
 
    El `.clasp.json` del repo se genera automáticamente a partir de esta variable (ver `setup-clasp.ts`), así que no lo edites a mano.
 
+   Opcionalmente, podés fijar qué implementación redesplegá `pnpm deploy` por defecto agregando a `.env`:
+
+   ```
+   CLASP_DEPLOYMENT_ID=tu_deployment_id_aqui
+   ```
+
+   Sin esta variable, `pnpm deploy` elige automáticamente la implementación con el número de versión más alto (ver "Desplegar la web app" más abajo).
+
 4. Cargar las **Script Properties** que usa la app de ejemplo, en el editor de Apps Script: **Configuración del proyecto → Propiedades de la secuencia de comandos**:
 
    | Propiedad | Para qué sirve |
@@ -145,8 +153,8 @@ Consecuencias prácticas:
 | `pnpm build` | Typecheck + bundle en `dist/` |
 | `pnpm build:clean` | Borra `dist/` y vuelve a buildear |
 | `pnpm push` | Regenera `.clasp.json` y sube `dist/` al proyecto de Apps Script |
-| `pnpm deploy` | Build limpio + push (flujo recomendado) |
-| `pnpm migrate` | Deploy + ejecuta la función `migrate` en Apps Script con `clasp run` (ver más abajo) |
+| `pnpm deploy` | Build limpio + push + redeploy automático de la implementación actual (flujo recomendado, ver "Desplegar la web app") |
+| `pnpm migrate` | Build + push (sin redeploy) + ejecuta la función `migrate` en Apps Script con `clasp run` (ver más abajo) |
 | `pnpm pull` | Trae lo que está subido en Apps Script a `dist/` |
 | `pnpm open` | Abre el proyecto en el editor web de Apps Script |
 
@@ -272,24 +280,56 @@ Todo lo que exportás desde `src/index.ts` queda como función global, y **cualq
 
 ## Desplegar la web app
 
-1. `pnpm deploy`.
+`/dev` siempre sirve el último código subido (el que deja `clasp push`). La URL `.../exec` queda fija en la **versión** con la que se creó cada implementación: subir código nuevo no alcanza para que `/exec` lo vea, hace falta un `redeploy` que apunte esa implementación a una versión nueva.
+
+### Primera implementación (una sola vez)
+
+1. `pnpm run deploy --push-only` (sube el código sin tocar implementaciones, porque todavía no existe ninguna).
 2. En el editor (`pnpm open`): **Implementar → Nueva implementación → Aplicación web**.
 3. Elegí **Ejecutar como** y **Quién tiene acceso** según tu caso. Con "Ejecutar como: yo", la app lee y escribe las sheets con tus permisos.
 4. Abrí la URL `.../exec`: `GET /` muestra la pantalla de login de ejemplo.
 
-La URL `/exec` queda fija en la versión con la que la creaste: `pnpm deploy` actualiza el código del proyecto (lo que ves en `/dev`), pero no las implementaciones. Para publicar los cambios en `/exec`:
+### Despliegues siguientes
+
+`pnpm deploy` es el flujo recomendado: buildea, pushea y después **redespliega automáticamente** la implementación existente, sin crear una nueva ni cambiar la URL `/exec`.
 
 ```bash
-pnpm deploy
-clasp list-deployments                        # el ID es el que aparece en la URL /exec
-clasp redeploy <deploymentId> --description "qué cambió"
+pnpm run deploy
 ```
 
-`redeploy` crea una versión nueva y apunta la implementación a ella, sin cambiar la URL.
+Cómo elige qué implementación redesplegar, en este orden de prioridad:
+
+1. `--deployment <id>`, si lo pasás en la línea de comandos.
+2. `CLASP_DEPLOYMENT_ID`, si lo definís en `.env` (ver "Configuración del proyecto").
+3. Si ninguno de los dos está presente, la implementación con el **número de versión más alto** (ignora la entrada `@HEAD`, que no tiene `versionNumber` y nunca se redespliega).
+
+Si no hay ninguna implementación con versión (proyecto sin implementaciones todavía), el script falla y sugiere `--new` en vez de crear una implementación sola.
+
+### Flags disponibles
+
+| Flag | Qué hace | Ejemplo |
+|---|---|---|
+| (ninguno) | Build limpio + push + redeploy de la implementación elegida según la prioridad de arriba | `pnpm run deploy` |
+| `--push-only` | Build + push, sin tocar implementaciones. Útil para la primera implementación o cuando solo querés actualizar `/dev` | `pnpm run deploy --push-only` |
+| `--new` | Build + push + crea una implementación **nueva** (URL `/exec` nueva), en vez de redesplegar la existente. No se puede combinar con `--deployment` ni `--push-only` | `pnpm run deploy --new` |
+| `--deployment <id>` | Fija qué implementación redesplegar para esta corrida, por encima de `CLASP_DEPLOYMENT_ID` | `pnpm run deploy --deployment AKfycb...` |
+| `--description <texto>` | Descripción de la versión/implementación creada. Por defecto usa una fecha | `pnpm run deploy --description "fix login"` |
+| `--force` | Agrega `--force` a `clasp push`, para sobrescribir el manifest remoto cuando clasp frena el push (ver abajo) | `pnpm run deploy --force` |
+| `--dry-run` | No hace build, push ni redeploy: solo lista las implementaciones existentes (lectura) y muestra qué haría | `pnpm run deploy --dry-run` |
+
+**Importante:** usá `pnpm run deploy <flags>`, no `pnpm deploy <flags>`. pnpm tiene un comando interno `deploy` que intercepta esa forma y rechaza cualquier flag que no sea suyo (`Unknown option`). `pnpm run deploy` evita ese comando interno y pasa los flags directo al script.
+
+### El freno de seguridad `Skipping push.`
+
+Si el `appsscript.json` remoto cambió (por ejemplo, Google agrega un bloque `webapp` al crear una implementación de web app), clasp pregunta si sobrescribirlo; la respuesta por defecto es **No**, así que `clasp push` no sube nada y queda la línea `Skipping push.` en la salida. `pnpm deploy` detecta ese caso (o que `clasp push` termine con error) y **frena ahí**: nunca lista ni redespliega implementaciones con código viejo. El mensaje te indica copiar el cambio a `src/appsscript.json`, o volver a correr con `--force` para sobrescribir el manifest remoto a propósito.
+
+```bash
+pnpm run deploy --force --description "force push after manifest change"
+```
 
 ## Ejecutar `migrate` y `createUser` desde la terminal
 
-`pnpm migrate` hace dos cosas: `pnpm deploy` (build + `clasp push`) y después `clasp run migrate`, que ejecuta la función ya subida a través de la **Apps Script Execution API**.
+`pnpm migrate` hace dos cosas: build + `clasp push` (sin redeploy, equivalente a `pnpm run deploy --push-only`) y después `clasp run migrate`, que ejecuta la función ya subida a través de la **Apps Script Execution API**.
 
 Son dos logins distintos:
 
