@@ -107,12 +107,13 @@ test('POST /me with a tampered token is 401', () => {
   assert.equal(response.status, 401);
 });
 
-test('there is no GET /me route', () => {
+test('there is no GET /me route: only POST is allowed', () => {
   const { router } = setup();
 
   const response = router.dispatch(request({ path: '/me', method: 'GET' }));
 
-  assert.equal(response.status, 404);
+  assert.equal(response.status, 405);
+  assert.deepEqual((response.body as { error: { details: unknown } }).error.details, { allowed: ['POST'] });
 });
 
 test('/me with the token only in params (not body) is 401', () => {
