@@ -5,7 +5,7 @@ import { InMemoryStorageAdapter } from '../../core/testing/in-memory-storage-ada
 import { HttpError } from '../../core/api.ts';
 import type { Row } from '../../core/sheet-adapter.ts';
 import { createPost, updatePost, deletePost, toPostRecord, type PostDeps } from './post.model.ts';
-import { uploadMedia, listMedia, getMedia, deleteMedia, syncPostMediaSharing, type MediaDeps } from './media.model.ts';
+import { uploadMedia, listMedia, getMedia, deleteMedia, syncPostMediaSharing, MAX_MEDIA_PER_POST, type MediaDeps } from './media.model.ts';
 
 const NOW = () => new Date(1700000000000);
 const FOLDER_ID = 'folder-1';
@@ -334,4 +334,61 @@ test('getMedia on a public post returns links and never inlines base64, even wit
 
   assert.ok(view.url);
   assert.equal(view.data, undefined);
+});
+
+class FlakyStorageAdapter extends InMemoryStorageAdapter {
+  failUnshareFor = new Set<string>();
+
+  setPublic(fileId: string, isPublic: boolean): void {
+    if (!isPublic && this.failUnshareFor.has(fileId)) {
+      throw new Error('Drive is unavailable');
+    }
+    super.setPublic(fileId, isPublic);
+  }
+}
+
+test('a failed unshare does not stop the others, keeps the row truthful, reports 502, and a retry completes it', () => {
+  const base = setup();
+  const storage = new FlakyStorageAdapter();
+  const deps: MediaDeps = { ...base, storage };
+  const owner = asUser(author(deps));
+  const post = createPost(deps, owner, { title: 'Owned' });
+  updatePost(deps, owner, post.id, { status: 'published' });
+  uploadMedia(deps, owner, String(post.id), { name: 'a.png', mimeType: 'image/png', data: PNG_BASE64 });
+  uploadMedia(deps, owner, String(post.id), { name: 'b.png', mimeType: 'image/png', data: PNG_BASE64 });
+  const [first, second] = deps.adapter.getRows('media');
+  storage.failUnshareFor.add(String(first.drive_file_id));
+  const archived = updatePost(deps, owner, post.id, { status: 'archived' });
+
+  assert.throws(
+    () => syncPostMediaSharing(deps, toPostRecord(archived)),
+    (error: unknown) => error instanceof HttpError && error.status === 502 && error.code === 'STORAGE_SYNC_FAILED',
+  );
+  const afterFailure = deps.adapter.getRows('media');
+  assert.equal(afterFailure[0].is_public, true, 'the row still says public because Drive still shares it');
+  assert.equal(afterFailure[1].is_public, false);
+  assert.equal(storage.files.get(String(second.drive_file_id))?.isPublic, false);
+
+  storage.failUnshareFor.clear();
+  syncPostMediaSharing(deps, toPostRecord(archived));
+
+  assert.equal(storage.files.get(String(first.drive_file_id))?.isPublic, false);
+  assert.equal(deps.adapter.getRows('media')[0].is_public, false);
+});
+
+test('uploadMedia rejects more than MAX_MEDIA_PER_POST files with 422 and stores nothing', () => {
+  const deps = setup();
+  const owner = asUser(author(deps));
+  const post = createPost(deps, owner, { title: 'Owned' });
+  for (let index = 0; index < MAX_MEDIA_PER_POST; index++) {
+    uploadMedia(deps, owner, String(post.id), { name: `${index}.png`, mimeType: 'image/png', data: PNG_BASE64 });
+  }
+  const storage = deps.storage as InMemoryStorageAdapter;
+  const filesBefore = storage.files.size;
+
+  assert.throws(
+    () => uploadMedia(deps, owner, String(post.id), { name: 'extra.png', mimeType: 'image/png', data: PNG_BASE64 }),
+    (error: unknown) => error instanceof HttpError && error.status === 422,
+  );
+  assert.equal(storage.files.size, filesBefore);
 });

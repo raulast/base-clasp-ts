@@ -3,7 +3,7 @@ import type { LockAdapter } from '../../core/lock-adapter.ts';
 import { noopLock } from '../../core/lock-adapter.ts';
 import { Model } from '../../core/model.ts';
 import { sameId } from '../../core/relations.ts';
-import { HttpError, notFound, forbidden } from '../../core/api.ts';
+import { HttpError, notFound, forbidden, validationError } from '../../core/api.ts';
 import { validateUpload, mediaKind, type UploadInput } from '../../core/media-rules.ts';
 import type { StorageAdapter } from '../../core/storage-adapter.ts';
 import { canEdit, type PostUser, type PostRecord } from '../policies/post.policy.ts';
@@ -64,6 +64,9 @@ function toMediaView(deps: MediaDeps, row: Row, post: PostRecord): MediaView {
   return view;
 }
 
+// Bounds Drive usage per post (2 MB each, so at most 40 MB per post).
+export const MAX_MEDIA_PER_POST = 20;
+
 export function uploadMedia(deps: MediaDeps, user: PostUser | null, postIdOrSlug: string, input: UploadInput): MediaView {
   const post = findPostForUser(deps, user, postIdOrSlug);
   const postRecord = toPostRecord(post);
@@ -74,6 +77,10 @@ export function uploadMedia(deps: MediaDeps, user: PostUser | null, postIdOrSlug
 
   const media = mediaModel(deps);
   return media.withLock(() => {
+    const existing = media.all({ where: (row) => sameId(row.post_id, post.id) });
+    if (existing.length >= MAX_MEDIA_PER_POST) {
+      throw validationError({ media: `A post can have at most ${MAX_MEDIA_PER_POST} files` });
+    }
     const folderId = deps.getFolderId();
     const saved = deps.storage.saveFile({
       folderId,
@@ -147,15 +154,32 @@ export function deleteMedia(deps: MediaDeps, user: PostUser | null, mediaId: Cel
   });
 }
 
+// Each file is synced on its own: a Drive failure on one does not stop the others, a row only changes once
+// Drive confirmed it (so a file that is still shared stays marked public), and the caller gets an explicit
+// error. Repeating the post change retries only the files that are still out of sync.
 export function syncPostMediaSharing(deps: MediaDeps, post: PostRecord): void {
   const media = mediaModel(deps);
   const targetPublic = isPostPublic(post);
   const rows = media.all({ where: (row) => sameId(row.post_id, post.id) });
+  let failures = 0;
   for (const row of rows) {
     const currentPublic = row.is_public === true;
-    if (currentPublic !== targetPublic) {
-      deps.storage.setPublic(String(row.drive_file_id), targetPublic);
-      media.update(row.id, { is_public: targetPublic });
+    if (currentPublic === targetPublic) {
+      continue;
     }
+    try {
+      deps.storage.setPublic(String(row.drive_file_id), targetPublic);
+    } catch {
+      failures++;
+      continue;
+    }
+    media.update(row.id, { is_public: targetPublic });
+  }
+  if (failures > 0) {
+    throw new HttpError(
+      502,
+      'STORAGE_SYNC_FAILED',
+      'The post was saved, but some files could not be updated in Drive. Repeat the change to retry.',
+    );
   }
 }

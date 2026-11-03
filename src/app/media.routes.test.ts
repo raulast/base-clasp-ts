@@ -223,3 +223,34 @@ test('every media response is a valid envelope', () => {
   assert.equal(typeof body.ok, 'boolean');
   assert.equal(typeof body.status, 'number');
 });
+
+test('hostile media bodies get 4xx envelopes, never a 500', () => {
+  const { adapter, crypto, router } = setup();
+  createUserRow(adapter, crypto, 'author@a.com', 'author9', 'author');
+  const token = signInToken(router, 'author@a.com');
+  const post = createPostAs(router, token);
+
+  for (const body of [{ data: 123 }, { data: ['a'] }, { name: { x: 1 } }, { mimeType: null }]) {
+    const response = router.dispatch(
+      request({
+        path: `/api/v1/posts/${post.id}/media`,
+        method: 'POST',
+        body: { name: 'a.png', mimeType: 'image/png', data: PNG_BASE64, ...body, token },
+      }),
+    );
+    assert.equal(response.status, 422, JSON.stringify(body));
+  }
+
+  const uploaded = router.dispatch(
+    request({ path: `/api/v1/posts/${post.id}/media`, method: 'POST', body: { name: 'a.png', mimeType: 'image/png', data: PNG_BASE64, token } }),
+  );
+  const mediaId = (uploaded.body as { data: { id: unknown } }).data.id;
+  const shown = router.dispatch(
+    request({ path: `/api/v1/media/${mediaId}`, method: 'POST', body: { _method: 'GET', download: { evil: true }, token } }),
+  );
+  assert.equal(shown.status, 200);
+  assert.equal((shown.body as { data: { data?: string } }).data.data, undefined);
+
+  const missing = router.dispatch(request({ path: '/api/v1/media/not-a-number' }));
+  assert.equal(missing.status, 404);
+});
