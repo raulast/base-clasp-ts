@@ -456,3 +456,15 @@ test('toPostRecord maps a sheet row to the policy-facing PostRecord shape', () =
   assert.equal(record.status, 'draft');
   assert.equal(record.visibility, 'public');
 });
+
+test('an empty update still fires onPostChanged, so the UI can retry a failed media sync', () => {
+  const deps = setup();
+  const owner = asUser(author(deps));
+  const post = createPost(deps, owner, { title: 'Hello' });
+  const seen: unknown[] = [];
+  const withHook: PostDeps = { ...deps, onPostChanged: (changed) => seen.push(changed) };
+
+  updatePost(withHook, owner, post.id, {});
+
+  assert.equal(seen.length, 1);
+});

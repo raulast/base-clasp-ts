@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <?!= include('app/views/partials/head') ?>
+  </head>
+  <body>
+    <?!= include('app/views/partials/header', { appName: appName, appUrl: appUrl }) ?>
+
+    <main class="container">
+      <p id="not-allowed" hidden>You must sign in as an admin to see this page.</p>
+
+      <div id="users-content" hidden>
+        <h2>Users</h2>
+        <p id="loading" aria-busy="true">Loading users…</p>
+        <table id="users-table" hidden>
+          <thead>
+            <tr>
+              <th scope="col">Email</th>
+              <th scope="col">Username</th>
+              <th scope="col">Role</th>
+              <th scope="col">Disabled</th>
+            </tr>
+          </thead>
+          <tbody id="users-body"></tbody>
+        </table>
+        <nav id="pagination" hidden>
+          <ul>
+            <li><a id="prev-page" href="#" role="button" class="secondary">Previous</a></li>
+            <li><a id="next-page" href="#" role="button" class="secondary">Next</a></li>
+          </ul>
+        </nav>
+        <small id="users-error" role="alert"></small>
+      </div>
+    </main>
+
+    <?!= include('app/views/partials/client', { appUrl: appUrl }) ?>
+    <?!= include('app/views/partials/session') ?>
+    <script>
+      var ROLES = ['admin', 'author', 'reader'];
+      var currentPage = 1;
+
+      var notAllowed = document.getElementById('not-allowed');
+      var content = document.getElementById('users-content');
+      var loading = document.getElementById('loading');
+      var table = document.getElementById('users-table');
+      var body = document.getElementById('users-body');
+      var pagination = document.getElementById('pagination');
+      var usersError = document.getElementById('users-error');
+
+      function clearChildren(node) {
+        while (node.firstChild) {
+          node.removeChild(node.firstChild);
+        }
+      }
+
+      function renderRow(user, selfId) {
+        var isSelf = String(user.id) === String(selfId);
+        var roleSelect = App.el('select', { disabled: isSelf ? 'disabled' : undefined }, []);
+        ROLES.forEach(function (role) {
+          var option = App.el('option', { value: role, text: role }, []);
+          if (role === user.role) {
+            option.setAttribute('selected', 'selected');
+          }
+          roleSelect.appendChild(option);
+        });
+        roleSelect.addEventListener('change', function () {
+          usersError.textContent = '';
+          App.send('/api/v1/users/' + user.id, 'PATCH', { role: roleSelect.value }).catch(function (error) {
+            usersError.textContent = (error && error.message) || 'Could not update the role.';
+          });
+        });
+
+        var disabledToggle = App.el('input', { type: 'checkbox', disabled: isSelf ? 'disabled' : undefined }, []);
+        if (user.disabled) {
+          disabledToggle.setAttribute('checked', 'checked');
+        }
+        disabledToggle.addEventListener('change', function () {
+          usersError.textContent = '';
+          App.send('/api/v1/users/' + user.id, 'PATCH', { disabled: disabledToggle.checked }).catch(function (error) {
+            usersError.textContent = (error && error.message) || 'Could not update the account.';
+          });
+        });
+
+        return App.el('tr', {}, [
+          App.el('td', { text: user.email }, []),
+          App.el('td', { text: user.username }, []),
+          App.el('td', {}, [roleSelect]),
+          App.el('td', {}, [disabledToggle]),
+        ]);
+      }
+
+      function renderUsers(users, selfId) {
+        clearChildren(body);
+        table.hidden = false;
+        users.forEach(function (user) {
+          body.appendChild(renderRow(user, selfId));
+        });
+      }
+
+      function updatePagination(meta) {
+        pagination.hidden = meta.pages <= 1;
+        document.getElementById('prev-page').onclick = function (event) {
+          event.preventDefault();
+          loadUsers(Math.max(1, meta.page - 1));
+        };
+        document.getElementById('next-page').onclick = function (event) {
+          event.preventDefault();
+          loadUsers(Math.min(meta.pages, meta.page + 1));
+        };
+      }
+
+      function loadUsers(page) {
+        currentPage = page;
+        var selfId = AppSession.getUser().id;
+        App.get('/api/v1/users', { page: page, perPage: 20 })
+          .then(function (result) {
+            loading.hidden = true;
+            renderUsers(result.data, selfId);
+            updatePagination(result.meta);
+          })
+          .catch(function (error) {
+            loading.hidden = true;
+            usersError.textContent = (error && error.message) || 'Could not load users.';
+          });
+      }
+
+      AppSession.loadUser(
+        function (user) {
+          if (user.role !== 'admin') {
+            notAllowed.hidden = false;
+            return;
+          }
+          content.hidden = false;
+          loadUsers(currentPage);
+        },
+        function () {
+          notAllowed.hidden = false;
+        },
+      );
+    </script>
+  </body>
+</html>

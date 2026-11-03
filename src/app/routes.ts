@@ -43,6 +43,11 @@ export function createRouter({
   router.get('/login', pages.login);
   router.get('/register', pages.register);
   router.get('/profile', pages.profile);
+  router.get('/dashboard', pages.dashboard);
+  router.get('/dashboard/posts/new', pages.postEditor);
+  router.get('/dashboard/posts/:id/edit', pages.postEditor);
+  router.get('/admin/users', pages.adminUsers);
+  router.get('/admin/tags', pages.adminTags);
 
   const auth = createAuthController({ adapter, crypto, getSecret, now, lock });
   const mediaDeps: MediaDeps = { adapter, lock, now, storage: storage as StorageAdapter, getFolderId: getMediaFolderId ?? (() => '') };

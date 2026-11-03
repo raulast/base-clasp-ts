@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <?!= include('app/views/partials/head') ?>
+  </head>
+  <body>
+    <?!= include('app/views/partials/header', { appName: appName, appUrl: appUrl }) ?>
+
+    <main class="container">
+      <p id="not-allowed" hidden>You must sign in as an author or admin to use this page.</p>
+
+      <article id="editor-content" hidden>
+        <header>
+          <h2 id="editor-heading">New post</h2>
+        </header>
+        <form id="post-form" novalidate>
+          <label for="title">
+            Title
+            <input id="title" name="title" type="text" required />
+          </label>
+          <small id="title-error" role="alert"></small>
+
+          <label for="excerpt">
+            Excerpt
+            <input id="excerpt" name="excerpt" type="text" />
+          </label>
+          <small id="excerpt-error" role="alert"></small>
+
+          <label for="body">
+            Body
+            <textarea id="body" name="body" rows="10"></textarea>
+          </label>
+          <small id="body-error" role="alert"></small>
+
+          <label for="visibility">
+            Visibility
+            <select id="visibility" name="visibility">
+              <option value="public">Public</option>
+              <option value="members">Members</option>
+              <option value="private">Private</option>
+            </select>
+          </label>
+          <small id="visibility-error" role="alert"></small>
+
+          <fieldset>
+            <legend>Tags</legend>
+            <div id="tag-checkboxes"></div>
+          </fieldset>
+
+          <small id="form-error" role="alert"></small>
+          <button id="save-button" type="submit">Save</button>
+        </form>
+
+        <div id="status-section" hidden>
+          <h3>Status</h3>
+          <p>Current status: <span id="current-status"></span></p>
+          <div id="status-actions"></div>
+          <small id="status-error" role="alert"></small>
+        </div>
+
+        <div id="media-section" hidden>
+          <h3>Media</h3>
+          <table id="media-table">
+            <thead>
+              <tr>
+                <th scope="col">Name</th>
+                <th scope="col">Kind</th>
+                <th scope="col">Size</th>
+                <th scope="col"></th>
+              </tr>
+            </thead>
+            <tbody id="media-body"></tbody>
+          </table>
+          <label for="media-file">
+            Upload file
+            <input id="media-file" type="file" />
+          </label>
+          <small id="media-error" role="alert"></small>
+        </div>
+      </article>
+    </main>
+
+    <?!= include('app/views/partials/client', { appUrl: appUrl }) ?>
+    <?!= include('app/views/partials/session') ?>
+    <script>
+      var postId = '<?= id ?>';
+      var isEdit = postId.length > 0;
+
+      // Mirrors core/media-rules.ts; the server stays authoritative.
+      var ALLOWED_MIME_TYPES = [
+        'image/png',
+        'image/jpeg',
+        'image/gif',
+        'image/webp',
+        'video/mp4',
+        'video/webm',
+        'application/pdf',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/zip',
+      ];
+      var MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
+
+      // Mirrors the status transitions table in src/app/models/post.model.ts.
+      var TRANSITIONS = {
+        draft: ['published'],
+        published: ['archived', 'draft'],
+        archived: ['draft'],
+      };
+
+      var notAllowed = document.getElementById('not-allowed');
+      var content = document.getElementById('editor-content');
+      var heading = document.getElementById('editor-heading');
+      var form = document.getElementById('post-form');
+      var titleInput = document.getElementById('title');
+      var excerptInput = document.getElementById('excerpt');
+      var bodyInput = document.getElementById('body');
+      var visibilitySelect = document.getElementById('visibility');
+      var tagCheckboxes = document.getElementById('tag-checkboxes');
+      var formError = document.getElementById('form-error');
+      var fieldErrors = {
+        title: document.getElementById('title-error'),
+        excerpt: document.getElementById('excerpt-error'),
+        body: document.getElementById('body-error'),
+        visibility: document.getElementById('visibility-error'),
+      };
+      var statusSection = document.getElementById('status-section');
+      var currentStatusLabel = document.getElementById('current-status');
+      var statusActions = document.getElementById('status-actions');
+      var statusError = document.getElementById('status-error');
+      var mediaSection = document.getElementById('media-section');
+      var mediaBody = document.getElementById('media-body');
+      var mediaFileInput = document.getElementById('media-file');
+      var mediaError = document.getElementById('media-error');
+
+      function clearChildren(node) {
+        while (node.firstChild) {
+          node.removeChild(node.firstChild);
+        }
+      }
+
+      function clearErrors() {
+        formError.textContent = '';
+        for (var field in fieldErrors) {
+          fieldErrors[field].textContent = '';
+        }
+      }
+
+      function showErrors(error) {
+        var details = error && error.details;
+        if (details) {
+          for (var field in fieldErrors) {
+            if (details[field]) {
+              fieldErrors[field].textContent = String(details[field]);
+            }
+          }
+        } else {
+          formError.textContent = (error && error.message) || 'Could not save the post.';
+        }
+      }
+
+      function loadTags(selectedSlugs) {
+        clearChildren(tagCheckboxes);
+        App.get('/api/v1/tags', {}).then(function (result) {
+          result.data.forEach(function (tag) {
+            var checkbox = App.el('input', { type: 'checkbox', value: tag.slug, id: 'tag-' + tag.slug }, []);
+            if (selectedSlugs.indexOf(tag.slug) !== -1) {
+              checkbox.setAttribute('checked', 'checked');
+            }
+            var label = App.el('label', { for: 'tag-' + tag.slug }, [checkbox, document.createTextNode(' ' + tag.name)]);
+            tagCheckboxes.appendChild(label);
+          });
+        });
+      }
+
+      function selectedTagSlugs() {
+        var slugs = [];
+        tagCheckboxes.querySelectorAll('input[type=checkbox]').forEach(function (checkbox) {
+          if (checkbox.checked) {
+            slugs.push(checkbox.value);
+          }
+        });
+        return slugs;
+      }
+
+      function renderStatusActions(status) {
+        currentStatusLabel.textContent = status;
+        clearChildren(statusActions);
+        (TRANSITIONS[status] || []).forEach(function (next) {
+          var button = App.el(
+            'button',
+            {
+              type: 'button',
+              class: 'secondary outline',
+              text: 'Move to ' + next,
+              onclick: function () {
+                statusError.textContent = '';
+                App.send('/api/v1/posts/' + postId, 'PATCH', { status: next })
+                  .then(function (result) {
+                    renderStatusActions(result.data.status);
+                  })
+                  .catch(function (error) {
+                    if (error && error.code === 'STORAGE_SYNC_FAILED') {
+                      showSyncRetry(error.message);
+                      return;
+                    }
+                    statusError.textContent = (error && error.message) || 'Could not change the status.';
+                  });
+              },
+            },
+            [],
+          );
+          statusActions.appendChild(button);
+        });
+      }
+
+      // The post change was saved but some Drive files were not re-shared: show the real status and let the
+      // author retry; an empty PATCH re-runs the media sync without changing the post.
+      function showSyncRetry(message) {
+        App.get('/api/v1/posts/' + postId, {}).then(function (result) {
+          renderStatusActions(result.data.status);
+          statusError.textContent = message;
+          var retry = App.el(
+            'button',
+            {
+              type: 'button',
+              text: 'Retry file sync',
+              onclick: function () {
+                retry.setAttribute('aria-busy', 'true');
+                App.send('/api/v1/posts/' + postId, 'PATCH', {})
+                  .then(function () {
+                    statusError.textContent = '';
+                    statusActions.removeChild(retry);
+                  })
+                  .catch(function (error) {
+                    statusError.textContent = (error && error.message) || 'Could not sync the files.';
+                  })
+                  .then(function () {
+                    retry.removeAttribute('aria-busy');
+                  });
+              },
+            },
+            [],
+          );
+          statusActions.appendChild(retry);
+        });
+      }
+
+      function renderMediaRow(item) {
+        var deleteButton = App.el(
+          'button',
+          {
+            type: 'button',
+            class: 'secondary outline',
+            text: 'Delete',
+            onclick: function () {
+              if (!confirm('Delete ' + item.name + '? The file goes to the Drive trash.')) {
+                return;
+              }
+              mediaError.textContent = '';
+              App.send('/api/v1/media/' + item.id, 'DELETE', {})
+                .then(function () {
+                  loadMedia();
+                })
+                .catch(function (error) {
+                  mediaError.textContent = (error && error.message) || 'Could not delete the file.';
+                });
+            },
+          },
+          [],
+        );
+        return App.el('tr', {}, [
+          App.el('td', { text: item.name }, []),
+          App.el('td', { text: item.kind }, []),
+          App.el('td', { text: String(item.size) }, []),
+          App.el('td', {}, [deleteButton]),
+        ]);
+      }
+
+      function loadMedia() {
+        clearChildren(mediaBody);
+        App.get('/api/v1/posts/' + postId + '/media', {}).then(function (result) {
+          result.data.forEach(function (item) {
+            mediaBody.appendChild(renderMediaRow(item));
+          });
+        });
+      }
+
+      function stripDataUrlPrefix(dataUrl) {
+        var commaIndex = dataUrl.indexOf(',');
+        return commaIndex === -1 ? dataUrl : dataUrl.slice(commaIndex + 1);
+      }
+
+      function setupMediaUpload() {
+        mediaFileInput.addEventListener('change', function () {
+          mediaError.textContent = '';
+          var file = mediaFileInput.files[0];
+          if (!file) {
+            return;
+          }
+          if (ALLOWED_MIME_TYPES.indexOf(file.type) === -1) {
+            mediaError.textContent = 'Unsupported file type: ' + file.type;
+            mediaFileInput.value = '';
+            return;
+          }
+          if (file.size > MAX_UPLOAD_BYTES) {
+            mediaError.textContent = 'File is larger than 2 MB';
+            mediaFileInput.value = '';
+            return;
+          }
+          var reader = new FileReader();
+          reader.onload = function () {
+            var base64 = stripDataUrlPrefix(String(reader.result));
+            App.send('/api/v1/posts/' + postId + '/media', 'POST', { name: file.name, mimeType: file.type, data: base64 })
+              .then(function () {
+                mediaFileInput.value = '';
+                loadMedia();
+              })
+              .catch(function (error) {
+                mediaError.textContent = (error && error.message) || 'Could not upload the file.';
+              });
+          };
+          reader.readAsDataURL(file);
+        });
+      }
+
+      function loadPostForEdit() {
+        App.get('/api/v1/posts/' + postId, {})
+          .then(function (result) {
+            var post = result.data;
+            heading.textContent = 'Edit post';
+            titleInput.value = post.title;
+            excerptInput.value = post.excerpt || '';
+            bodyInput.value = post.body || '';
+            visibilitySelect.value = post.visibility;
+            loadTags((post.tags || []).map(function (tag) { return tag.slug; }));
+            statusSection.hidden = false;
+            renderStatusActions(post.status);
+            mediaSection.hidden = false;
+            loadMedia();
+            setupMediaUpload();
+          })
+          .catch(function (error) {
+            formError.textContent = (error && error.message) || 'Could not load the post.';
+          });
+      }
+
+      form.addEventListener('submit', function (event) {
+        event.preventDefault();
+        clearErrors();
+        var payload = {
+          title: titleInput.value,
+          excerpt: excerptInput.value,
+          body: bodyInput.value,
+          visibility: visibilitySelect.value,
+          tags: selectedTagSlugs(),
+        };
+        var request = isEdit
+          ? App.send('/api/v1/posts/' + postId, 'PATCH', payload)
+          : App.send('/api/v1/posts', 'POST', payload);
+        request
+          .then(function (result) {
+            if (!isEdit) {
+              window.top.location.href = App.url('/dashboard/posts/' + result.data.id + '/edit');
+              return;
+            }
+            window.top.location.href = App.url('/dashboard');
+          })
+          .catch(showErrors);
+      });
+
+      AppSession.loadUser(
+        function (user) {
+          if (user.role !== 'author' && user.role !== 'admin') {
+            notAllowed.hidden = false;
+            return;
+          }
+          content.hidden = false;
+          if (isEdit) {
+            loadPostForEdit();
+          } else {
+            heading.textContent = 'New post';
+            loadTags([]);
+          }
+        },
+        function () {
+          notAllowed.hidden = false;
+        },
+      );
+    </script>
+  </body>
+</html>

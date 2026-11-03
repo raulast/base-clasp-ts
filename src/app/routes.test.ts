@@ -286,3 +286,63 @@ test('GET /profile renders the profile view with the app URL for navigation', ()
     data: { appName: 'Gas Fullstack Core', appUrl: 'https://script.google.com/macros/s/ID/dev' },
   });
 });
+
+test('GET /dashboard renders the dashboard view with the app URL for navigation', () => {
+  const { router } = setupWithUrl();
+
+  const response = router.dispatch(request({ path: '/dashboard' }));
+
+  assert.deepEqual(response.body, {
+    kind: 'view',
+    name: 'app/views/dashboard',
+    data: { appName: 'Gas Fullstack Core', appUrl: 'https://script.google.com/macros/s/ID/dev' },
+  });
+});
+
+test('GET /dashboard/posts/new renders the post editor view with an empty id', () => {
+  const { router } = setupWithUrl();
+
+  const response = router.dispatch(request({ path: '/dashboard/posts/new' }));
+
+  assert.deepEqual(response.body, {
+    kind: 'view',
+    name: 'app/views/post-editor',
+    data: { appName: 'Gas Fullstack Core', appUrl: 'https://script.google.com/macros/s/ID/dev', id: '' },
+  });
+});
+
+test('GET /dashboard/posts/:id/edit renders the post editor view with the id param', () => {
+  const { router } = setupWithUrl();
+
+  const response = router.dispatch(request({ path: '/dashboard/posts/42/edit' }));
+
+  assert.deepEqual(response.body, {
+    kind: 'view',
+    name: 'app/views/post-editor',
+    data: { appName: 'Gas Fullstack Core', appUrl: 'https://script.google.com/macros/s/ID/dev', id: '42' },
+  });
+});
+
+test('GET /admin/users renders the admin users view with the app URL for navigation', () => {
+  const { router } = setupWithUrl();
+
+  const response = router.dispatch(request({ path: '/admin/users' }));
+
+  assert.deepEqual(response.body, {
+    kind: 'view',
+    name: 'app/views/admin-users',
+    data: { appName: 'Gas Fullstack Core', appUrl: 'https://script.google.com/macros/s/ID/dev' },
+  });
+});
+
+test('GET /admin/tags renders the admin tags view with the app URL for navigation', () => {
+  const { router } = setupWithUrl();
+
+  const response = router.dispatch(request({ path: '/admin/tags' }));
+
+  assert.deepEqual(response.body, {
+    kind: 'view',
+    name: 'app/views/admin-tags',
+    data: { appName: 'Gas Fullstack Core', appUrl: 'https://script.google.com/macros/s/ID/dev' },
+  });
+});

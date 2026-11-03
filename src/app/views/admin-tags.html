@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <?!= include('app/views/partials/head') ?>
+  </head>
+  <body>
+    <?!= include('app/views/partials/header', { appName: appName, appUrl: appUrl }) ?>
+
+    <main class="container">
+      <p id="not-allowed" hidden>You must sign in as an admin to see this page.</p>
+
+      <div id="tags-content" hidden>
+        <h2>Tags</h2>
+        <p id="loading" aria-busy="true">Loading tags…</p>
+        <ul id="tags-list"></ul>
+
+        <form id="tag-form" novalidate>
+          <label for="tag-name">
+            New tag
+            <input id="tag-name" name="name" type="text" required />
+          </label>
+          <small id="tag-error" role="alert"></small>
+          <button id="tag-submit" type="submit">Create tag</button>
+        </form>
+      </div>
+    </main>
+
+    <?!= include('app/views/partials/client', { appUrl: appUrl }) ?>
+    <?!= include('app/views/partials/session') ?>
+    <script>
+      var notAllowed = document.getElementById('not-allowed');
+      var content = document.getElementById('tags-content');
+      var loading = document.getElementById('loading');
+      var list = document.getElementById('tags-list');
+      var form = document.getElementById('tag-form');
+      var nameInput = document.getElementById('tag-name');
+      var tagError = document.getElementById('tag-error');
+
+      function clearChildren(node) {
+        while (node.firstChild) {
+          node.removeChild(node.firstChild);
+        }
+      }
+
+      function renderTags(tags) {
+        clearChildren(list);
+        loading.hidden = true;
+        tags.forEach(function (tag) {
+          list.appendChild(App.el('li', { text: tag.name }, []));
+        });
+      }
+
+      function loadTags() {
+        App.get('/api/v1/tags', {})
+          .then(function (result) {
+            renderTags(result.data);
+          })
+          .catch(function () {
+            loading.hidden = true;
+          });
+      }
+
+      form.addEventListener('submit', function (event) {
+        event.preventDefault();
+        tagError.textContent = '';
+        App.send('/api/v1/tags', 'POST', { name: nameInput.value })
+          .then(function () {
+            nameInput.value = '';
+            loadTags();
+          })
+          .catch(function (error) {
+            tagError.textContent = (error && error.message) || 'Could not create the tag.';
+          });
+      });
+
+      AppSession.loadUser(
+        function (user) {
+          if (user.role !== 'admin') {
+            notAllowed.hidden = false;
+            return;
+          }
+          content.hidden = false;
+          loadTags();
+        },
+        function () {
+          notAllowed.hidden = false;
+        },
+      );
+    </script>
+  </body>
+</html>

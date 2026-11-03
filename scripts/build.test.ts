@@ -96,6 +96,10 @@ test('buildBundle of the real src/index.ts exposes every GAS global and bundles 
   assert.ok(fs.existsSync(path.join(outdir, 'app/views/register.html')));
   assert.ok(fs.existsSync(path.join(outdir, 'app/views/post.html')));
   assert.ok(fs.existsSync(path.join(outdir, 'app/views/profile.html')));
+  assert.ok(fs.existsSync(path.join(outdir, 'app/views/dashboard.html')));
+  assert.ok(fs.existsSync(path.join(outdir, 'app/views/post-editor.html')));
+  assert.ok(fs.existsSync(path.join(outdir, 'app/views/admin-users.html')));
+  assert.ok(fs.existsSync(path.join(outdir, 'app/views/admin-tags.html')));
   assert.ok(fs.existsSync(path.join(outdir, 'app/views/partials/session.html')));
   assert.ok(fs.existsSync(path.join(outdir, 'app/views/partials/client.html')));
 });

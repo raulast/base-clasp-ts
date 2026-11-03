@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <?!= include('app/views/partials/head') ?>
+  </head>
+  <body>
+    <?!= include('app/views/partials/header', { appName: appName, appUrl: appUrl }) ?>
+
+    <main class="container">
+      <p id="not-allowed" hidden>You must sign in as an author or admin to see this page.</p>
+
+      <div id="dashboard-content" hidden>
+        <nav>
+          <ul>
+            <li><h2>Your posts</h2></li>
+          </ul>
+          <ul>
+            <li><a href="<?= appUrl ?>?route=/dashboard/posts/new" role="button">New post</a></li>
+          </ul>
+        </nav>
+        <p id="loading" aria-busy="true">Loading posts…</p>
+        <p id="empty" hidden>No posts yet.</p>
+        <table id="posts-table" hidden>
+          <thead>
+            <tr>
+              <th scope="col">Title</th>
+              <th scope="col">Status</th>
+              <th scope="col">Visibility</th>
+              <th scope="col">Updated</th>
+              <th scope="col"></th>
+            </tr>
+          </thead>
+          <tbody id="posts-body"></tbody>
+        </table>
+      </div>
+    </main>
+
+    <?!= include('app/views/partials/client', { appUrl: appUrl }) ?>
+    <?!= include('app/views/partials/session') ?>
+    <script>
+      var notAllowed = document.getElementById('not-allowed');
+      var content = document.getElementById('dashboard-content');
+      var loading = document.getElementById('loading');
+      var empty = document.getElementById('empty');
+      var table = document.getElementById('posts-table');
+      var body = document.getElementById('posts-body');
+
+      function clearChildren(node) {
+        while (node.firstChild) {
+          node.removeChild(node.firstChild);
+        }
+      }
+
+      function renderRow(post) {
+        var editLink = App.el('a', { href: App.url('/dashboard/posts/' + post.id + '/edit'), text: 'Edit' }, []);
+        var deleteButton = App.el(
+          'button',
+          {
+            type: 'button',
+            class: 'secondary outline',
+            text: 'Delete',
+            onclick: function () {
+              if (!window.confirm('Delete "' + post.title + '"? This cannot be undone.')) {
+                return;
+              }
+              App.send('/api/v1/posts/' + post.id, 'DELETE', {}).then(function () {
+                loadPosts();
+              });
+            },
+          },
+          [],
+        );
+        return App.el('tr', {}, [
+          App.el('td', { text: post.title }, []),
+          App.el('td', { text: post.status }, []),
+          App.el('td', { text: post.visibility }, []),
+          App.el('td', { text: App.formatDate(post.updated_at) }, []),
+          App.el('td', {}, [editLink, document.createTextNode(' '), deleteButton]),
+        ]);
+      }
+
+      function renderPosts(posts) {
+        clearChildren(body);
+        loading.hidden = true;
+        if (posts.length === 0) {
+          empty.hidden = false;
+          table.hidden = true;
+          return;
+        }
+        empty.hidden = true;
+        table.hidden = false;
+        posts.forEach(function (post) {
+          body.appendChild(renderRow(post));
+        });
+      }
+
+      function loadPosts() {
+        var user = AppSession.getUser();
+        var params = { perPage: 50 };
+        if (user.role !== 'admin') {
+          params.author = user.id;
+        }
+        App.get('/api/v1/posts', params)
+          .then(function (result) {
+            renderPosts(result.data);
+          })
+          .catch(function () {
+            loading.hidden = true;
+            empty.hidden = false;
+          });
+      }
+
+      AppSession.loadUser(
+        function (user) {
+          if (user.role !== 'author' && user.role !== 'admin') {
+            notAllowed.hidden = false;
+            return;
+          }
+          content.hidden = false;
+          loadPosts();
+        },
+        function () {
+          notAllowed.hidden = false;
+        },
+      );
+    </script>
+  </body>
+</html>
