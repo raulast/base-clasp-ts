@@ -27,6 +27,7 @@ export interface MediaView {
   url?: string;
   downloadUrl?: string;
   embedUrl?: string;
+  imageUrl?: string;
   data?: string;
 }
 
@@ -59,6 +60,9 @@ function toMediaView(deps: MediaDeps, row: Row, post: PostRecord): MediaView {
     view.downloadUrl = links.downloadUrl;
     if (row.kind === 'video') {
       view.embedUrl = links.embedUrl;
+    }
+    if (row.kind === 'image') {
+      view.imageUrl = links.imageUrl;
     }
   }
   return view;

@@ -21,6 +21,8 @@ export interface MediaLinks {
   url: string;
   downloadUrl: string;
   embedUrl: string;
+  // The /view link is an HTML page; <img> needs a URL that returns the image itself.
+  imageUrl: string;
 }
 
 export interface StorageAdapter {

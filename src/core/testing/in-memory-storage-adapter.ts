@@ -61,6 +61,7 @@ export class InMemoryStorageAdapter implements StorageAdapter {
       url: `https://drive.google.com/file/d/${fileId}/view`,
       downloadUrl: `https://drive.google.com/uc?export=download&id=${fileId}`,
       embedUrl: `https://drive.google.com/file/d/${fileId}/preview`,
+      imageUrl: `https://drive.google.com/thumbnail?id=${fileId}&sz=w1600`,
     };
   }
 }

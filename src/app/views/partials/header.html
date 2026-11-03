@@ -4,9 +4,13 @@
       <li><a href="<?= appUrl ?>" class="contrast"><strong><?= appName ?></strong></a></li>
     </ul>
     <ul>
-      <li><a href="<?= appUrl ?>?route=/profile">Profile</a></li>
-      <li id="session-user" hidden></li>
-      <li><a id="logout" href="<?= appUrl ?>" role="button" class="secondary outline" hidden>Sign out</a></li>
+      <li id="nav-dashboard" hidden><a href="<?= appUrl ?>?route=/dashboard">Dashboard</a></li>
+      <li id="nav-admin" hidden><a href="<?= appUrl ?>?route=/admin/users">Admin</a></li>
+      <li id="nav-profile" hidden><a href="<?= appUrl ?>?route=/profile">Profile</a></li>
+      <li id="nav-session-user" hidden></li>
+      <li id="nav-signin" hidden><a href="<?= appUrl ?>?route=/login">Sign in</a></li>
+      <li id="nav-register" hidden><a href="<?= appUrl ?>?route=/register">Register</a></li>
+      <li><a id="logout" href="<?= appUrl ?>?route=/login" role="button" class="secondary outline" hidden>Sign out</a></li>
     </ul>
   </nav>
 </header>

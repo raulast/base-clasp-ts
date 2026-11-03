@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <?!= include('app/views/partials/head') ?>
+  </head>
+  <body>
+    <?!= include('app/views/partials/header', { appName: appName, appUrl: appUrl }) ?>
+
+    <main class="container">
+      <div id="tag-filters"></div>
+      <p id="loading" aria-busy="true">Loading posts…</p>
+      <p id="empty" hidden>No posts yet.</p>
+      <div id="post-list"></div>
+      <nav id="pagination" hidden>
+        <ul>
+          <li><a id="prev-page" href="#" role="button" class="secondary">Previous</a></li>
+          <li><a id="next-page" href="#" role="button" class="secondary">Next</a></li>
+        </ul>
+      </nav>
+    </main>
+
+    <?!= include('app/views/partials/client', { appUrl: appUrl }) ?>
+    <?!= include('app/views/partials/session') ?>
+    <script>
+      var query = {};
+      (function () {
+        var pairs = window.top.location.search.replace(/^\?/, '').split('&');
+        for (var i = 0; i < pairs.length; i++) {
+          var pair = pairs[i].split('=');
+          if (pair[0]) {
+            query[decodeURIComponent(pair[0])] = decodeURIComponent(pair[1] || '');
+          }
+        }
+      })();
+
+      var currentTag = query.tag || '';
+      var currentPage = Number(query.page) || 1;
+
+      var loading = document.getElementById('loading');
+      var empty = document.getElementById('empty');
+      var postList = document.getElementById('post-list');
+      var pagination = document.getElementById('pagination');
+      var tagFilters = document.getElementById('tag-filters');
+
+      function clearChildren(node) {
+        while (node.firstChild) {
+          node.removeChild(node.firstChild);
+        }
+      }
+
+      function renderTags(tags) {
+        clearChildren(tagFilters);
+        var all = App.el('a', { href: App.url('/'), text: 'All' }, []);
+        tagFilters.appendChild(all);
+        tags.forEach(function (tag) {
+          tagFilters.appendChild(document.createTextNode(' '));
+          tagFilters.appendChild(App.el('a', { href: App.url('/', { tag: tag.slug }), text: tag.name }, []));
+        });
+      }
+
+      function renderPosts(posts) {
+        clearChildren(postList);
+        empty.hidden = posts.length > 0;
+        posts.forEach(function (post) {
+          var titleLink = App.el('a', { href: App.url('/posts/' + post.slug), text: post.title }, []);
+          var title = App.el('h3', {}, [titleLink]);
+          var meta = App.el('p', { text: (post.author && post.author.username) + ' · ' + App.formatDate(post.published_at) }, []);
+          var excerpt = App.el('p', { text: post.excerpt || '' }, []);
+          var tagsLine = App.el(
+            'p',
+            {},
+            (post.tags || []).map(function (tag) {
+              return App.el('span', { text: tag.name }, []);
+            }),
+          );
+          postList.appendChild(App.el('article', {}, [title, meta, excerpt, tagsLine]));
+        });
+      }
+
+      function updatePagination(meta) {
+        pagination.hidden = meta.pages <= 1;
+        document.getElementById('prev-page').setAttribute(
+          'href',
+          App.url('/', { tag: currentTag || undefined, page: Math.max(1, meta.page - 1) }),
+        );
+        document.getElementById('next-page').setAttribute(
+          'href',
+          App.url('/', { tag: currentTag || undefined, page: Math.min(meta.pages, meta.page + 1) }),
+        );
+      }
+
+      function loadPosts() {
+        var params = { page: currentPage };
+        if (currentTag) {
+          params.tag = currentTag;
+        }
+        App.get('/api/v1/posts', params)
+          .then(function (result) {
+            loading.hidden = true;
+            renderPosts(result.data);
+            if (result.meta) {
+              updatePagination(result.meta);
+            }
+          })
+          .catch(function () {
+            loading.hidden = true;
+            empty.hidden = false;
+          });
+      }
+
+      App.get('/api/v1/tags', {})
+        .then(function (result) {
+          renderTags(result.data);
+        })
+        .catch(function () {});
+
+      AppSession.loadUser(loadPosts, loadPosts);
+    </script>
+  </body>
+</html>

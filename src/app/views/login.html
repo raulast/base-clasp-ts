@@ -7,7 +7,7 @@
     <?!= include('app/views/partials/header', { appName: appName, appUrl: appUrl }) ?>
 
     <main class="container">
-      <article id="login-card" hidden>
+      <article>
         <header>
           <h2>Sign in</h2>
         </header>
@@ -23,19 +23,11 @@
           <small id="login-error" role="alert"></small>
           <button id="login-submit" type="submit">Sign in</button>
         </form>
+        <p>No account yet? <a href="<?= appUrl ?>?route=/register">Register</a></p>
       </article>
-
-      <article id="welcome-card" hidden>
-        <header>
-          <h2 id="welcome-title"></h2>
-        </header>
-        <p id="welcome-email"></p>
-        <a href="<?= appUrl ?>?route=/profile" role="button">Go to your profile</a>
-      </article>
-
-      <p id="loading" aria-busy="true">Loading…</p>
     </main>
 
+    <?!= include('app/views/partials/client', { appUrl: appUrl }) ?>
     <?!= include('app/views/partials/session') ?>
     <script>
       var form = document.getElementById('login-form');
@@ -43,9 +35,6 @@
       var passwordInput = document.getElementById('password');
       var submit = document.getElementById('login-submit');
       var errorBox = document.getElementById('login-error');
-      var loginCard = document.getElementById('login-card');
-      var welcomeCard = document.getElementById('welcome-card');
-      var loading = document.getElementById('loading');
 
       function setBusy(busy) {
         submit.disabled = busy;
@@ -64,20 +53,6 @@
         passwordInput.removeAttribute('aria-invalid');
       }
 
-      function showLoggedIn(user) {
-        document.getElementById('welcome-title').textContent = 'Welcome, ' + (user.username || user.email);
-        document.getElementById('welcome-email').textContent = user.email;
-        loading.hidden = true;
-        loginCard.hidden = true;
-        welcomeCard.hidden = false;
-      }
-
-      function showLoginForm() {
-        loading.hidden = true;
-        welcomeCard.hidden = true;
-        loginCard.hidden = false;
-      }
-
       form.addEventListener('submit', function (event) {
         event.preventDefault();
         clearError();
@@ -86,34 +61,23 @@
           return;
         }
         setBusy(true);
-        google.script.run
-          .withSuccessHandler(function (result) {
-            if (!result || !result.ok) {
-              setBusy(false);
-              showError((result && result.error && result.error.message) || 'Could not sign in.');
-              return;
-            }
+        App.send('/api/v1/auth/login', 'POST', { email: emailInput.value, password: passwordInput.value })
+          .then(function (result) {
             AppSession.setToken(result.data.token);
-            AppSession.loadUser(
-              function (user) {
-                setBusy(false);
-                showLoggedIn(user);
-              },
-              function () {
-                setBusy(false);
-                showLoginForm();
-                showError('Could not load your account.');
-              },
-            );
+            window.top.location.href = App.url('/');
           })
-          .withFailureHandler(function () {
+          .catch(function (error) {
             setBusy(false);
-            showError('The server is not available. Try again later.');
-          })
-          .api('/api/v1/auth/login', { email: emailInput.value, password: passwordInput.value });
+            showError((error && error.message) || 'Could not sign in.');
+          });
       });
 
-      AppSession.loadUser(showLoggedIn, showLoginForm);
+      AppSession.loadUser(
+        function () {
+          window.top.location.href = App.url('/');
+        },
+        function () {},
+      );
     </script>
   </body>
 </html>

@@ -157,13 +157,14 @@ test('GET /api/v1/auth/me with a tampered token is 401', () => {
   assert.equal(response.status, 401);
 });
 
-test('the old /login and /me routes are removed', () => {
+test('the old /login and /me API routes are removed (/login is now a GET-only page)', () => {
   const { router } = setup();
 
   const login = router.dispatch(request({ path: '/login', method: 'POST', body: {} }));
   const me = router.dispatch(request({ path: '/me', method: 'POST', body: {} }));
 
-  assert.equal(login.status, 404);
+  assert.equal(login.status, 405);
+  assert.deepEqual((login.body as { error: { details?: { allowed?: string[] } } }).error.details, { allowed: ['GET'] });
   assert.equal(me.status, 404);
 });
 
@@ -226,15 +227,51 @@ function setupWithUrl() {
   return { router };
 }
 
-test('GET / renders the index view with the app URL for navigation', () => {
+test('GET / renders the home view with the app URL for navigation', () => {
   const { router } = setupWithUrl();
 
   const response = router.dispatch(request({ path: '/' }));
 
   assert.deepEqual(response.body, {
     kind: 'view',
-    name: 'app/views/index',
+    name: 'app/views/home',
     data: { appName: 'Gas Fullstack Core', appUrl: 'https://script.google.com/macros/s/ID/dev' },
+  });
+});
+
+test('GET /login renders the login view with the app URL for navigation', () => {
+  const { router } = setupWithUrl();
+
+  const response = router.dispatch(request({ path: '/login' }));
+
+  assert.deepEqual(response.body, {
+    kind: 'view',
+    name: 'app/views/login',
+    data: { appName: 'Gas Fullstack Core', appUrl: 'https://script.google.com/macros/s/ID/dev' },
+  });
+});
+
+test('GET /register renders the register view with the app URL for navigation', () => {
+  const { router } = setupWithUrl();
+
+  const response = router.dispatch(request({ path: '/register' }));
+
+  assert.deepEqual(response.body, {
+    kind: 'view',
+    name: 'app/views/register',
+    data: { appName: 'Gas Fullstack Core', appUrl: 'https://script.google.com/macros/s/ID/dev' },
+  });
+});
+
+test('GET /posts/:slug renders the post view with the app URL and the slug param', () => {
+  const { router } = setupWithUrl();
+
+  const response = router.dispatch(request({ path: '/posts/hello-world' }));
+
+  assert.deepEqual(response.body, {
+    kind: 'view',
+    name: 'app/views/post',
+    data: { appName: 'Gas Fullstack Core', appUrl: 'https://script.google.com/macros/s/ID/dev', slug: 'hello-world' },
   });
 });
 

@@ -176,4 +176,5 @@ test('links returns the drive url, downloadUrl and embedUrl', () => {
   assert.equal(links.url, `https://drive.google.com/file/d/${saved.fileId}/view`);
   assert.equal(links.downloadUrl, `https://drive.google.com/uc?export=download&id=${saved.fileId}`);
   assert.equal(links.embedUrl, `https://drive.google.com/file/d/${saved.fileId}/preview`);
+  assert.equal(links.imageUrl, `https://drive.google.com/thumbnail?id=${saved.fileId}&sz=w1600`);
 });

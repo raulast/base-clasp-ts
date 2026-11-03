@@ -38,7 +38,10 @@ export function createRouter({
   const router = new Router();
 
   const pages = createPageController({ getAppUrl });
-  router.get('/', pages.index);
+  router.get('/', pages.home);
+  router.get('/posts/:slug', pages.postDetail);
+  router.get('/login', pages.login);
+  router.get('/register', pages.register);
   router.get('/profile', pages.profile);
 
   const auth = createAuthController({ adapter, crypto, getSecret, now, lock });

@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <?!= include('app/views/partials/head') ?>
+  </head>
+  <body>
+    <?!= include('app/views/partials/header', { appName: appName, appUrl: appUrl }) ?>
+
+    <main class="container">
+      <p id="loading" aria-busy="true">Loading post…</p>
+      <p id="not-found" hidden>Post not found.</p>
+
+      <article id="post-article" hidden>
+        <header>
+          <h2 id="post-title"></h2>
+          <p id="post-meta"></p>
+          <p id="post-tags"></p>
+        </header>
+        <div id="post-body"></div>
+        <div id="post-media"></div>
+      </article>
+
+      <section id="comments-section" hidden>
+        <h3>Comments</h3>
+        <div id="comments-list"></div>
+        <nav id="comments-pagination" hidden>
+          <ul>
+            <li><a id="comments-prev" href="#" role="button" class="secondary">Previous</a></li>
+            <li><a id="comments-next" href="#" role="button" class="secondary">Next</a></li>
+          </ul>
+        </nav>
+        <form id="comment-form" hidden>
+          <label for="comment-body">
+            Add a comment
+            <textarea id="comment-body" required></textarea>
+          </label>
+          <small id="comment-error" role="alert"></small>
+          <button id="comment-submit" type="submit">Post comment</button>
+        </form>
+        <p id="comment-signed-out" hidden>
+          <a href="<?= appUrl ?>?route=/login">Sign in</a> to add a comment.
+        </p>
+      </section>
+    </main>
+
+    <?!= include('app/views/partials/client', { appUrl: appUrl }) ?>
+    <?!= include('app/views/partials/session') ?>
+    <script>
+      var slug = '<?= slug ?>';
+      var postId = null;
+      var commentsPage = 1;
+
+      var loading = document.getElementById('loading');
+      var notFound = document.getElementById('not-found');
+      var postArticle = document.getElementById('post-article');
+      var commentsSection = document.getElementById('comments-section');
+
+      function clearChildren(node) {
+        while (node.firstChild) {
+          node.removeChild(node.firstChild);
+        }
+      }
+
+      function base64ToBlob(data, mimeType) {
+        var binary = atob(data);
+        var bytes = new Uint8Array(binary.length);
+        for (var i = 0; i < binary.length; i++) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+        return new Blob([bytes], { type: mimeType });
+      }
+
+      // Protected files have no public link: the API returns them as base64 to authorized readers.
+      function loadProtected(item) {
+        return App.get('/api/v1/media/' + encodeURIComponent(item.id), { download: true }).then(function (result) {
+          return result.data;
+        });
+      }
+
+      function renderProtectedImage(container, item) {
+        var figure = App.el('figure', {}, [App.el('small', { text: 'Loading ' + item.name + '…' }, [])]);
+        container.appendChild(figure);
+        loadProtected(item)
+          .then(function (file) {
+            clearChildren(figure);
+            var src = URL.createObjectURL(base64ToBlob(file.data, String(item.mime_type)));
+            figure.appendChild(App.el('img', { src: src, alt: item.name, style: 'max-width:100%' }, []));
+          })
+          .catch(function () {
+            clearChildren(figure);
+            figure.appendChild(App.el('small', { text: 'Could not load ' + item.name }, []));
+          });
+      }
+
+      function renderProtectedFile(container, item) {
+        var button = App.el('button', { type: 'button', class: 'secondary outline', text: 'Download ' + item.name }, []);
+        button.addEventListener('click', function () {
+          button.setAttribute('aria-busy', 'true');
+          loadProtected(item)
+            .then(function (file) {
+              var href = URL.createObjectURL(base64ToBlob(file.data, String(item.mime_type)));
+              var link = App.el('a', { href: href, download: String(item.name) }, []);
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+              setTimeout(function () {
+                URL.revokeObjectURL(href);
+              }, 1000);
+            })
+            .catch(function (error) {
+              alert((error && error.message) || 'Could not download the file.');
+            })
+            .then(function () {
+              button.removeAttribute('aria-busy');
+            });
+        });
+        container.appendChild(App.el('p', {}, [button]));
+      }
+
+      function renderMedia(items) {
+        var container = document.getElementById('post-media');
+        clearChildren(container);
+        items.forEach(function (item) {
+          var isPublic = Boolean(item.url);
+          if (item.kind === 'image') {
+            if (isPublic) {
+              container.appendChild(App.el('img', { src: item.imageUrl, alt: item.name, style: 'max-width:100%' }, []));
+            } else {
+              renderProtectedImage(container, item);
+            }
+          } else if (item.kind === 'video') {
+            if (isPublic) {
+              container.appendChild(
+                App.el('iframe', { src: item.embedUrl, title: item.name, width: '100%', height: '360', allow: 'autoplay' }, []),
+              );
+            } else {
+              container.appendChild(App.el('p', { text: item.name + ': video playback is only available on public posts.' }, []));
+            }
+          } else if (isPublic) {
+            container.appendChild(App.el('p', {}, [App.el('a', { href: item.downloadUrl, text: 'Download ' + item.name }, [])]));
+          } else {
+            renderProtectedFile(container, item);
+          }
+        });
+      }
+
+      function renderPost(post) {
+        postId = post.id;
+        document.getElementById('post-title').textContent = post.title;
+        document.getElementById('post-meta').textContent =
+          (post.author && post.author.username) + ' · ' + App.formatDate(post.published_at);
+        var tagsNode = document.getElementById('post-tags');
+        clearChildren(tagsNode);
+        (post.tags || []).forEach(function (tag) {
+          tagsNode.appendChild(App.el('span', { text: tag.name }, []));
+          tagsNode.appendChild(document.createTextNode(' '));
+        });
+        var bodyNode = document.getElementById('post-body');
+        clearChildren(bodyNode);
+        App.paragraphs(post.body).forEach(function (p) {
+          bodyNode.appendChild(p);
+        });
+        loading.hidden = true;
+        postArticle.hidden = false;
+        commentsSection.hidden = false;
+
+        App.get('/api/v1/posts/' + post.id + '/media', {})
+          .then(function (result) {
+            renderMedia(result.data);
+          })
+          .catch(function () {});
+
+        loadComments(1);
+      }
+
+      function canDeleteComment(comment, post, currentUser) {
+        if (!currentUser) {
+          return false;
+        }
+        if (currentUser.role === 'admin') {
+          return true;
+        }
+        if (comment.author && String(comment.author.id) === String(currentUser.id)) {
+          return true;
+        }
+        return post.author && String(post.author.id) === String(currentUser.id);
+      }
+
+      function renderComments(comments, post) {
+        var list = document.getElementById('comments-list');
+        clearChildren(list);
+        var currentUser = AppSession.getUser();
+        comments.forEach(function (comment) {
+          var meta = App.el('small', { text: (comment.author && comment.author.username) + ' · ' + App.formatDate(comment.created_at) }, []);
+          var body = App.el('p', { text: comment.body }, []);
+          var children = [meta, body];
+          if (canDeleteComment(comment, post, currentUser)) {
+            var deleteButton = App.el(
+              'button',
+              {
+                type: 'button',
+                class: 'secondary outline',
+                text: 'Delete',
+                onclick: function () {
+                  App.send('/api/v1/comments/' + comment.id, 'DELETE', {}).then(function () {
+                    loadComments(commentsPage);
+                  });
+                },
+              },
+              [],
+            );
+            children.push(deleteButton);
+          }
+          list.appendChild(App.el('article', {}, children));
+        });
+      }
+
+      function loadComments(page) {
+        commentsPage = page;
+        App.get('/api/v1/posts/' + postId + '/comments', { page: page })
+          .then(function (result) {
+            App.get('/api/v1/posts/' + postId, {}).then(function (postResult) {
+              renderComments(result.data, postResult.data);
+            });
+            var pagination = document.getElementById('comments-pagination');
+            pagination.hidden = !result.meta || result.meta.pages <= 1;
+            document.getElementById('comments-prev').onclick = function (event) {
+              event.preventDefault();
+              loadComments(Math.max(1, page - 1));
+            };
+            document.getElementById('comments-next').onclick = function (event) {
+              event.preventDefault();
+              loadComments(Math.min(result.meta.pages, page + 1));
+            };
+          })
+          .catch(function () {});
+      }
+
+      function setupCommentForm(currentUser) {
+        var form = document.getElementById('comment-form');
+        var signedOut = document.getElementById('comment-signed-out');
+        if (!currentUser) {
+          form.hidden = true;
+          signedOut.hidden = false;
+          return;
+        }
+        form.hidden = false;
+        signedOut.hidden = true;
+        form.addEventListener('submit', function (event) {
+          event.preventDefault();
+          var textarea = document.getElementById('comment-body');
+          var errorBox = document.getElementById('comment-error');
+          errorBox.textContent = '';
+          App.send('/api/v1/posts/' + postId + '/comments', 'POST', { body: textarea.value })
+            .then(function () {
+              textarea.value = '';
+              loadComments(commentsPage);
+            })
+            .catch(function (error) {
+              errorBox.textContent = (error && error.message) || 'Could not post the comment.';
+            });
+        });
+      }
+
+      function loadPost() {
+        App.get('/api/v1/posts/' + slug, {})
+          .then(function (result) {
+            renderPost(result.data);
+          })
+          .catch(function () {
+            loading.hidden = true;
+            notFound.hidden = false;
+          });
+      }
+
+      AppSession.loadUser(
+        function (user) {
+          setupCommentForm(user);
+          loadPost();
+        },
+        function () {
+          setupCommentForm(null);
+          loadPost();
+        },
+      );
+    </script>
+  </body>
+</html>

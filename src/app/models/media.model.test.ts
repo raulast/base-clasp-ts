@@ -392,3 +392,19 @@ test('uploadMedia rejects more than MAX_MEDIA_PER_POST files with 422 and stores
   );
   assert.equal(storage.files.size, filesBefore);
 });
+
+test('public images get a direct imageUrl for <img>; other kinds and protected posts do not', () => {
+  const deps = setup();
+  const owner = asUser(author(deps));
+  const post = createPost(deps, owner, { title: 'Public' });
+  updatePost(deps, owner, post.id, { status: 'published' });
+
+  const image = uploadMedia(deps, owner, String(post.id), { name: 'a.png', mimeType: 'image/png', data: PNG_BASE64 });
+  const video = uploadMedia(deps, owner, String(post.id), { name: 'v.mp4', mimeType: 'video/mp4', data: MP4_BASE64 });
+  assert.match(String(image.imageUrl), /^https:\/\/drive\.google\.com\/thumbnail\?id=.+&sz=w1600$/);
+  assert.equal(video.imageUrl, undefined);
+
+  const draft = createPost(deps, owner, { title: 'Draft' });
+  const privateImage = uploadMedia(deps, owner, String(draft.id), { name: 'b.png', mimeType: 'image/png', data: PNG_BASE64 });
+  assert.equal(privateImage.imageUrl, undefined);
+});

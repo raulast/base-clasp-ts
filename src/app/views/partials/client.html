@@ -1,0 +1,109 @@
+<script>
+  // Thin client over google.script.run: every call goes through api(route, body) and resolves/rejects
+  // the same envelope shape the server returns, so pages never touch google.script.run directly.
+  var App = (function () {
+    var appUrl = '<?= appUrl ?>';
+
+    function call(route, body) {
+      return new Promise(function (resolve, reject) {
+        google.script.run
+          .withSuccessHandler(function (result) {
+            if (result && result.ok) {
+              resolve(result);
+            } else {
+              reject((result && result.error) || { status: 500, code: 'INTERNAL', message: 'Unexpected response' });
+            }
+          })
+          .withFailureHandler(function (error) {
+            reject({ status: 0, code: 'TRANSPORT_ERROR', message: (error && error.message) || 'Request failed' });
+          })
+          .api(route, body || {});
+      });
+    }
+
+    function get(route, params) {
+      var body = {};
+      for (var key in params) {
+        if (Object.prototype.hasOwnProperty.call(params, key)) {
+          body[key] = params[key];
+        }
+      }
+      body._method = 'GET';
+      var token = AppSession.getToken();
+      if (token) {
+        body.token = token;
+      }
+      return call(route, body);
+    }
+
+    function send(route, method, body) {
+      var payload = {};
+      for (var key in body) {
+        if (Object.prototype.hasOwnProperty.call(body, key)) {
+          payload[key] = body[key];
+        }
+      }
+      if (method !== 'POST') {
+        payload._method = method;
+      }
+      var token = AppSession.getToken();
+      if (token) {
+        payload.token = token;
+      }
+      return call(route, payload);
+    }
+
+    function url(route, params) {
+      var query = 'route=' + encodeURIComponent(route);
+      for (var key in params) {
+        if (Object.prototype.hasOwnProperty.call(params, key) && params[key] !== undefined && params[key] !== null) {
+          query += '&' + encodeURIComponent(key) + '=' + encodeURIComponent(params[key]);
+        }
+      }
+      return appUrl + '?' + query;
+    }
+
+    function el(tag, attrs, children) {
+      var node = document.createElement(tag);
+      attrs = attrs || {};
+      for (var key in attrs) {
+        if (!Object.prototype.hasOwnProperty.call(attrs, key)) {
+          continue;
+        }
+        if (key === 'text') {
+          node.textContent = attrs[key];
+        } else if (key.lastIndexOf('on', 0) === 0 && typeof attrs[key] === 'function') {
+          node.addEventListener(key.slice(2).toLowerCase(), attrs[key]);
+        } else if (attrs[key] !== undefined && attrs[key] !== null) {
+          node.setAttribute(key, attrs[key]);
+        }
+      }
+      (children || []).forEach(function (child) {
+        if (child === null || child === undefined) {
+          return;
+        }
+        node.appendChild(typeof child === 'string' ? document.createTextNode(child) : child);
+      });
+      return node;
+    }
+
+    function paragraphs(text) {
+      var blocks = String(text || '').split(/\n\s*\n/);
+      var nodes = [];
+      for (var i = 0; i < blocks.length; i++) {
+        var block = blocks[i].trim();
+        if (block.length > 0) {
+          nodes.push(el('p', { text: block }, []));
+        }
+      }
+      return nodes;
+    }
+
+    function formatDate(ms) {
+      var date = new Date(Number(ms));
+      return isNaN(date.getTime()) ? '' : date.toLocaleDateString();
+    }
+
+    return { appUrl: appUrl, call: call, get: get, send: send, url: url, el: el, paragraphs: paragraphs, formatDate: formatDate };
+  })();
+</script>

@@ -54,7 +54,7 @@ test('buildBundle copies html views alongside their relative paths', async () =>
   );
 });
 
-test('buildBundle of the real src/index.ts exposes every GAS global and bundles app/views/index.html', async () => {
+test('buildBundle of the real src/index.ts exposes every GAS global and bundles app/views/home.html', async () => {
   const outdir = fs.mkdtempSync(path.join(os.tmpdir(), 'gas-build-'));
 
   await buildBundle({ entry: 'src/index.ts', outdir });
@@ -91,9 +91,13 @@ test('buildBundle of the real src/index.ts exposes every GAS global and bundles 
     assert.equal(typeof sandbox[name], 'function', `expected ${name} to be a global function`);
   }
 
-  assert.ok(fs.existsSync(path.join(outdir, 'app/views/index.html')));
+  assert.ok(fs.existsSync(path.join(outdir, 'app/views/home.html')));
+  assert.ok(fs.existsSync(path.join(outdir, 'app/views/login.html')));
+  assert.ok(fs.existsSync(path.join(outdir, 'app/views/register.html')));
+  assert.ok(fs.existsSync(path.join(outdir, 'app/views/post.html')));
   assert.ok(fs.existsSync(path.join(outdir, 'app/views/profile.html')));
   assert.ok(fs.existsSync(path.join(outdir, 'app/views/partials/session.html')));
+  assert.ok(fs.existsSync(path.join(outdir, 'app/views/partials/client.html')));
 });
 
 function adminSandbox(activeEmail: string, adminEmails: string): Record<string, unknown> {

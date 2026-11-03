@@ -2,6 +2,7 @@
   // Shared by every view: the JWT lives in sessionStorage and only travels in google.script.run bodies.
   var AppSession = (function () {
     var TOKEN_KEY = 'token';
+    var currentUser = null;
 
     function getToken() {
       return sessionStorage.getItem(TOKEN_KEY);
@@ -13,19 +14,39 @@
 
     function clear() {
       sessionStorage.removeItem(TOKEN_KEY);
+      currentUser = null;
+    }
+
+    function getUser() {
+      return currentUser;
+    }
+
+    function setHidden(id, hidden) {
+      var node = document.getElementById(id);
+      if (node) {
+        node.hidden = hidden;
+      }
     }
 
     function renderHeader(user) {
-      var label = document.getElementById('session-user');
-      var logout = document.getElementById('logout');
-      label.textContent = user ? user.username || user.email : '';
-      label.hidden = !user;
-      logout.hidden = !user;
+      var role = user ? user.role : null;
+      var label = document.getElementById('nav-session-user');
+      if (label) {
+        label.textContent = user ? user.username || user.email : '';
+      }
+      setHidden('nav-session-user', !user);
+      setHidden('nav-profile', !user);
+      setHidden('nav-dashboard', !(role === 'author' || role === 'admin'));
+      setHidden('nav-admin', role !== 'admin');
+      setHidden('nav-signin', !!user);
+      setHidden('nav-register', !!user);
+      setHidden('logout', !user);
     }
 
     function loadUser(onUser, onMissing) {
       var token = getToken();
       if (!token) {
+        currentUser = null;
         renderHeader(null);
         onMissing();
         return;
@@ -38,6 +59,7 @@
       google.script.run
         .withSuccessHandler(function (result) {
           if (result && result.ok && result.data && result.data.email) {
+            currentUser = result.data;
             renderHeader(result.data);
             onUser(result.data);
           } else {
@@ -49,8 +71,11 @@
     }
 
     // The Sign out link navigates to the login page; the token is cleared first.
-    document.getElementById('logout').addEventListener('click', clear);
+    var logoutLink = document.getElementById('logout');
+    if (logoutLink) {
+      logoutLink.addEventListener('click', clear);
+    }
 
-    return { getToken: getToken, setToken: setToken, clear: clear, loadUser: loadUser };
+    return { getToken: getToken, setToken: setToken, clear: clear, getUser: getUser, loadUser: loadUser, renderHeader: renderHeader };
   })();
 </script>
