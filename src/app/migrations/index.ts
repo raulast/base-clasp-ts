@@ -5,6 +5,7 @@ import { addRoleAndDisabledToUsersMigration } from './003_add_role_and_disabled_
 import { createTagsMigration } from './004_create_tags.ts';
 import { createPostsMigration } from './005_create_posts.ts';
 import { createPostTagsMigration } from './006_create_post_tags.ts';
+import { createCommentsMigration } from './007_create_comments.ts';
 
 export const migrations: Migration[] = [
   createUsersMigration,
@@ -13,4 +14,5 @@ export const migrations: Migration[] = [
   createTagsMigration,
   createPostsMigration,
   createPostTagsMigration,
+  createCommentsMigration,
 ];

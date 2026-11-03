@@ -93,7 +93,7 @@ test('app migrations create a posts sheet with status, visibility and soft delet
 
 test('rolling back the posts migration drops the posts sheet', () => {
   const adapter = new InMemorySheetAdapter();
-  const runner = new MigrationRunner(migrations, adapter);
+  const runner = new MigrationRunner(migrations.slice(0, 6), adapter);
   runner.migrate();
 
   assert.deepEqual(runner.rollback(), ['006_create_post_tags']);
@@ -113,9 +113,29 @@ test('app migrations create a post_tags pivot sheet without soft delete (detach 
 
 test('rolling back the post_tags migration drops the pivot sheet', () => {
   const adapter = new InMemorySheetAdapter();
-  const runner = new MigrationRunner(migrations, adapter);
+  const runner = new MigrationRunner(migrations.slice(0, 6), adapter);
   runner.migrate();
 
   assert.deepEqual(runner.rollback(), ['006_create_post_tags']);
   assert.equal(adapter.sheetExists('post_tags'), false);
+});
+
+test('app migrations create a comments sheet with soft delete', () => {
+  const adapter = new InMemorySheetAdapter();
+  new MigrationRunner(migrations, adapter).migrate();
+
+  const headers = adapter.getHeaders('comments');
+  assert.ok(headers.includes('post_id'));
+  assert.ok(headers.includes('author_id'));
+  assert.ok(headers.includes('body'));
+  assert.ok(headers.includes('deleted_at'));
+});
+
+test('rolling back the comments migration drops the sheet', () => {
+  const adapter = new InMemorySheetAdapter();
+  const runner = new MigrationRunner(migrations, adapter);
+  runner.migrate();
+
+  assert.deepEqual(runner.rollback(), ['007_create_comments']);
+  assert.equal(adapter.sheetExists('comments'), false);
 });
