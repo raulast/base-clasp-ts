@@ -256,3 +256,38 @@ test('firstOrCreate runs under a single lock acquisition', () => {
   assert.equal(lock.acquisitions, 1);
   assert.equal(lock.releases, 1);
 });
+
+test('find matches a numeric row id against a string id (path params are strings, Sheets ids are numbers)', () => {
+  const adapter = new InMemorySheetAdapter();
+  adapter.seed('posts', ['id', 'title'], [{ id: 5, title: 'Hello' }]);
+  const posts = new Model('posts', adapter, FIXED_NOW);
+
+  assert.deepEqual(posts.find('5'), { id: 5, title: 'Hello' });
+});
+
+test('find does not match a missing id against an empty string', () => {
+  const adapter = new InMemorySheetAdapter();
+  adapter.seed('posts', ['id', 'title'], [{ id: 5, title: 'Hello' }]);
+  const posts = new Model('posts', adapter, FIXED_NOW);
+
+  assert.equal(posts.find(''), null);
+});
+
+test('update matches a numeric row id against a string id', () => {
+  const adapter = new InMemorySheetAdapter();
+  adapter.seed('posts', ['id', 'title'], [{ id: 5, title: 'Hello' }]);
+  const posts = new Model('posts', adapter, FIXED_NOW);
+
+  const updated = posts.update('5', { title: 'Changed' });
+
+  assert.equal(updated?.title, 'Changed');
+});
+
+test('delete matches a numeric row id against a string id', () => {
+  const adapter = new InMemorySheetAdapter();
+  adapter.seed('posts', ['id', 'title'], [{ id: 5, title: 'Hello' }]);
+  const posts = new Model('posts', adapter, FIXED_NOW);
+
+  assert.equal(posts.delete('5'), true);
+  assert.equal(adapter.getRows('posts').length, 0);
+});

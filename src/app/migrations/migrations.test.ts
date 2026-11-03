@@ -68,9 +68,54 @@ test('app migrations create a tags sheet', () => {
 
 test('rolling back the tags migration drops the tags sheet', () => {
   const adapter = new InMemorySheetAdapter();
-  const runner = new MigrationRunner(migrations, adapter);
+  const runner = new MigrationRunner(migrations.slice(0, 4), adapter);
   runner.migrate();
 
   assert.deepEqual(runner.rollback(), ['004_create_tags']);
   assert.equal(adapter.sheetExists('tags'), false);
+});
+
+test('app migrations create a posts sheet with status, visibility and soft delete', () => {
+  const adapter = new InMemorySheetAdapter();
+  new MigrationRunner(migrations, adapter).migrate();
+
+  const headers = adapter.getHeaders('posts');
+  assert.ok(headers.includes('author_id'));
+  assert.ok(headers.includes('title'));
+  assert.ok(headers.includes('slug'));
+  assert.ok(headers.includes('excerpt'));
+  assert.ok(headers.includes('body'));
+  assert.ok(headers.includes('status'));
+  assert.ok(headers.includes('visibility'));
+  assert.ok(headers.includes('published_at'));
+  assert.ok(headers.includes('deleted_at'));
+});
+
+test('rolling back the posts migration drops the posts sheet', () => {
+  const adapter = new InMemorySheetAdapter();
+  const runner = new MigrationRunner(migrations, adapter);
+  runner.migrate();
+
+  assert.deepEqual(runner.rollback(), ['006_create_post_tags']);
+  assert.deepEqual(runner.rollback(), ['005_create_posts']);
+  assert.equal(adapter.sheetExists('posts'), false);
+});
+
+test('app migrations create a post_tags pivot sheet without soft delete (detach is a hard delete)', () => {
+  const adapter = new InMemorySheetAdapter();
+  new MigrationRunner(migrations, adapter).migrate();
+
+  const headers = adapter.getHeaders('post_tags');
+  assert.ok(headers.includes('post_id'));
+  assert.ok(headers.includes('tag_id'));
+  assert.equal(headers.includes('deleted_at'), false);
+});
+
+test('rolling back the post_tags migration drops the pivot sheet', () => {
+  const adapter = new InMemorySheetAdapter();
+  const runner = new MigrationRunner(migrations, adapter);
+  runner.migrate();
+
+  assert.deepEqual(runner.rollback(), ['006_create_post_tags']);
+  assert.equal(adapter.sheetExists('post_tags'), false);
 });

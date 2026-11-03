@@ -65,7 +65,7 @@ export class Model {
     const includeDeleted = query.includeDeleted ?? false;
     const row = this.adapter
       .getRows(this.sheetName)
-      .find((candidate) => candidate.id === id && this.isVisible(candidate, includeDeleted));
+      .find((candidate) => sameId(candidate.id, id) && this.isVisible(candidate, includeDeleted));
     return row ?? null;
   }
 
@@ -85,10 +85,10 @@ export class Model {
 
   update(id: CellValue, data: Partial<Row>): Row | null {
     return this.lock.withLock(() => {
-      const index = this.adapter.findRowIndex(this.sheetName, (row) => row.id === id);
+      const index = this.adapter.findRowIndex(this.sheetName, (row) => sameId(row.id, id));
       if (index === -1) return null;
       const existing = this.adapter.getRows(this.sheetName)[index];
-      const updated: Row = { ...existing, ...data, id };
+      const updated: Row = { ...existing, ...data, id: existing.id };
       if (this.headers().includes('updated_at')) {
         updated.updated_at = this.now().getTime();
       }
@@ -99,7 +99,7 @@ export class Model {
 
   delete(id: CellValue): boolean {
     return this.lock.withLock(() => {
-      const index = this.adapter.findRowIndex(this.sheetName, (row) => row.id === id);
+      const index = this.adapter.findRowIndex(this.sheetName, (row) => sameId(row.id, id));
       if (index === -1) return false;
       if (this.supportsSoftDelete()) {
         const existing = this.adapter.getRows(this.sheetName)[index];
