@@ -5,7 +5,8 @@ import { InMemoryLockAdapter } from '../../core/testing/in-memory-lock-adapter.t
 import { NodeCryptoAdapter } from '../../core/testing/node-crypto-adapter.ts';
 import { hashPassword } from '../../core/auth.ts';
 import type { CryptoAdapter } from '../../core/crypto-adapter.ts';
-import { createUser, authenticate, findUserById, sanitizeUser } from './user.model.ts';
+import { HttpError } from '../../core/api.ts';
+import { createUser, authenticate, findUserById, sanitizeUser, normalizeRole, isDisabled, MAX_PASSWORD_LENGTH } from './user.model.ts';
 
 const SECRET = 'test-secret';
 const NOW = () => new Date(1700000000000);
@@ -34,17 +35,17 @@ function countingCrypto(delegate: CryptoAdapter) {
 test('createUser hashes the password and strips it from the returned row', () => {
   const { adapter, crypto } = setup();
 
-  const user = createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
+  const user = createUser(adapter, crypto, 'ana@example.com', 'secretpw', 'ana', 'reader', NOW);
 
   assert.equal(user.email, 'ana@example.com');
   assert.ok(!('password' in user));
   const stored = adapter.getRows('users')[0];
-  assert.notEqual(stored.password, 'secret');
+  assert.notEqual(stored.password, 'secretpw');
 });
 
 test('createUser rejects a duplicate email', () => {
   const { adapter, crypto } = setup();
-  createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
+  createUser(adapter, crypto, 'ana@example.com', 'secretpw', 'ana', 'reader', NOW);
 
   assert.throws(() => createUser(adapter, crypto, 'ana@example.com', 'other', 'ana2', NOW));
 });
@@ -52,7 +53,7 @@ test('createUser rejects a duplicate email', () => {
 test('createUser stores the username', () => {
   const { adapter, crypto } = setup();
 
-  const user = createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
+  const user = createUser(adapter, crypto, 'ana@example.com', 'secretpw', 'ana', 'reader', NOW);
 
   assert.equal(user.username, 'ana');
   assert.equal(adapter.getRows('users')[0].username, 'ana');
@@ -60,10 +61,10 @@ test('createUser stores the username', () => {
 
 test('createUser rejects a duplicate username without writing', () => {
   const { adapter, crypto } = setup();
-  createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
+  createUser(adapter, crypto, 'ana@example.com', 'secretpw', 'ana', 'reader', NOW);
 
   assert.throws(
-    () => createUser(adapter, crypto, 'other@example.com', 'secret', 'ana', NOW),
+    () => createUser(adapter, crypto, 'other@example.com', 'secretpw', 'ana', 'reader', NOW),
     /Username already taken/,
   );
   assert.equal(adapter.getRows('users').length, 1);
@@ -71,9 +72,9 @@ test('createUser rejects a duplicate username without writing', () => {
 
 test('authenticate returns a token for the right credentials', () => {
   const { adapter, crypto } = setup();
-  createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
+  createUser(adapter, crypto, 'ana@example.com', 'secretpw', 'ana', 'reader', NOW);
 
-  const result = authenticate(adapter, crypto, SECRET, 'ana@example.com', 'secret', NOW);
+  const result = authenticate(adapter, crypto, SECRET, 'ana@example.com', 'secretpw', NOW);
 
   assert.equal(result.ok, true);
   assert.ok(typeof result.token === 'string');
@@ -81,7 +82,7 @@ test('authenticate returns a token for the right credentials', () => {
 
 test('authenticate does equal HMAC work for an unknown email and a wrong password', () => {
   const { adapter, crypto } = setup();
-  createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
+  createUser(adapter, crypto, 'ana@example.com', 'secretpw', 'ana', 'reader', NOW);
 
   const counter = countingCrypto(crypto);
   authenticate(adapter, counter.adapter, SECRET, 'warm-the-dummy-hash-cache@example.com', 'whatever', NOW);
@@ -100,17 +101,17 @@ test('authenticate does equal HMAC work for an unknown email and a wrong passwor
 
 test('authenticate verifies a seeded hashPassword value', () => {
   const { adapter, crypto } = setup();
-  const stored = hashPassword('secret', crypto);
+  const stored = hashPassword('secretpw', crypto);
   adapter.appendRow('users', { id: 1, email: 'seed@example.com', password: stored, created_at: 1, updated_at: 1, deleted_at: null });
 
-  const result = authenticate(adapter, crypto, SECRET, 'seed@example.com', 'secret', NOW);
+  const result = authenticate(adapter, crypto, SECRET, 'seed@example.com', 'secretpw', NOW);
 
   assert.equal(result.ok, true);
 });
 
 test('findUserById returns the user without the password', () => {
   const { adapter, crypto } = setup();
-  const created = createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
+  const created = createUser(adapter, crypto, 'ana@example.com', 'secretpw', 'ana', 'reader', NOW);
 
   const found = findUserById(adapter, created.id);
 
@@ -129,7 +130,7 @@ test('createUser runs its duplicate checks and insert inside one lock acquisitio
   const { adapter, crypto } = setup();
   const lock = new InMemoryLockAdapter();
 
-  createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW, lock);
+  createUser(adapter, crypto, 'ana@example.com', 'secretpw', 'ana', 'reader', NOW, lock);
 
   assert.equal(lock.acquisitions, 1);
   assert.equal(lock.releases, 1);
@@ -140,4 +141,106 @@ test('sanitizeUser strips the password field', () => {
 
   assert.ok(!('password' in sanitized));
   assert.equal(sanitized.email, 'ana@example.com');
+});
+
+test('createUser rejects invalid fields with a 422 and per-field details', () => {
+  const { adapter, crypto } = setup();
+
+  assert.throws(
+    () => createUser(adapter, crypto, 'not-an-email', 'short', '!!', 'nope', NOW),
+    (error: unknown) => {
+      assert.ok(error instanceof HttpError);
+      assert.equal(error.status, 422);
+      assert.equal(error.code, 'VALIDATION_ERROR');
+      assert.ok(error.details?.email);
+      assert.ok(error.details?.password);
+      assert.ok(error.details?.username);
+      assert.ok(error.details?.role);
+      return true;
+    },
+  );
+});
+
+test('createUser defaults the role to reader', () => {
+  const { adapter, crypto } = setup();
+
+  const user = createUser(adapter, crypto, 'ana@example.com', 'secretpw', 'ana', undefined, NOW);
+
+  assert.equal(user.role, 'reader');
+});
+
+test('createUser rejects a duplicate email with a 409 conflict', () => {
+  const { adapter, crypto } = setup();
+  createUser(adapter, crypto, 'ana@example.com', 'secretpw', 'ana', 'reader', NOW);
+
+  assert.throws(
+    () => createUser(adapter, crypto, 'ana@example.com', 'otherpw1', 'ana2', 'reader', NOW),
+    (error: unknown) => {
+      assert.ok(error instanceof HttpError);
+      assert.equal(error.status, 409);
+      assert.equal(error.code, 'CONFLICT');
+      return true;
+    },
+  );
+});
+
+test('authenticate fails for a disabled user but still does the hashing work', () => {
+  const { adapter, crypto } = setup();
+  const user = createUser(adapter, crypto, 'ana@example.com', 'secretpw', 'ana', 'reader', NOW);
+  const rowIndex = adapter.findRowIndex('users', (row) => row.id === user.id);
+  adapter.updateRow('users', rowIndex, { ...adapter.getRows('users')[rowIndex], disabled: true });
+
+  const result = authenticate(adapter, crypto, SECRET, 'ana@example.com', 'secretpw', NOW);
+
+  assert.equal(result.ok, false);
+});
+
+test('normalizeRole treats an empty role as reader', () => {
+  assert.equal(normalizeRole(''), 'reader');
+  assert.equal(normalizeRole(undefined), 'reader');
+  assert.equal(normalizeRole('admin'), 'admin');
+});
+
+test('isDisabled only treats true, "TRUE" and "true" as disabled', () => {
+  assert.equal(isDisabled(true), true);
+  assert.equal(isDisabled('TRUE'), true);
+  assert.equal(isDisabled('true'), true);
+  assert.equal(isDisabled(false), false);
+  assert.equal(isDisabled(''), false);
+  assert.equal(isDisabled(undefined), false);
+});
+
+test('createUser rejects a password longer than MAX_PASSWORD_LENGTH', () => {
+  const adapter = new InMemorySheetAdapter();
+  adapter.seed('users', ['id', 'email', 'username', 'password', 'role', 'disabled', 'created_at', 'updated_at', 'deleted_at']);
+  const crypto = new NodeCryptoAdapter();
+
+  assert.throws(
+    () => createUser(adapter, crypto, 'ana@example.com', 'x'.repeat(MAX_PASSWORD_LENGTH + 1), 'ana', 'reader', NOW),
+    (error: unknown) =>
+      error instanceof HttpError && error.status === 422 && Boolean((error.details as Record<string, string>).password),
+  );
+  assert.equal(adapter.getRows('users').length, 0);
+});
+
+test('authenticate rejects an over-long password without hashing it', () => {
+  const adapter = new InMemorySheetAdapter();
+  adapter.seed('users', ['id', 'email', 'username', 'password', 'role', 'disabled', 'created_at', 'updated_at', 'deleted_at']);
+  const crypto = new NodeCryptoAdapter();
+  createUser(adapter, crypto, 'ana@example.com', 'secret-password', 'ana', 'reader', NOW);
+  let hmacCalls = 0;
+  const counting: CryptoAdapter = {
+    hmacSha256Base64Url: (message, key) => {
+      hmacCalls++;
+      return crypto.hmacSha256Base64Url(message, key);
+    },
+    base64UrlEncode: (text) => crypto.base64UrlEncode(text),
+    base64UrlDecode: (text) => crypto.base64UrlDecode(text),
+    randomSalt: () => crypto.randomSalt(),
+  };
+
+  const result = authenticate(adapter, counting, SECRET, 'ana@example.com', 'x'.repeat(MAX_PASSWORD_LENGTH + 1), NOW);
+
+  assert.equal(result.ok, false);
+  assert.equal(hmacCalls, 0);
 });

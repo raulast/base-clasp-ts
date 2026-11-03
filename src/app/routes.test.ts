@@ -23,12 +23,47 @@ function request(overrides: Partial<Request> = {}): Request {
 
 const LOGIN_ERROR_MESSAGE = 'Invalid email or password';
 
-test('POST /api/v1/auth/login returns a token envelope for the right credentials', () => {
-  const { adapter, crypto, router } = setup();
-  createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
+test('POST /api/v1/auth/register creates a reader and returns a token envelope', () => {
+  const { router } = setup();
 
   const response = router.dispatch(
-    request({ path: '/api/v1/auth/login', method: 'POST', body: { email: 'ana@example.com', password: 'secret' } }),
+    request({
+      path: '/api/v1/auth/register',
+      method: 'POST',
+      body: { email: 'new@example.com', password: 'secretpw', username: 'newbie' },
+    }),
+  );
+
+  assert.equal(response.status, 201);
+  const body = response.body as { ok: boolean; data: { token?: string; user?: { role?: string; password?: string } } };
+  assert.equal(body.ok, true);
+  assert.ok(typeof body.data.user?.role === 'string');
+  assert.equal(body.data.user?.role, 'reader');
+  assert.ok(typeof body.data.token === 'string');
+  assert.ok(!('password' in (body.data.user ?? {})));
+});
+
+test('POST /api/v1/auth/register ignores a role in the body and always creates a reader', () => {
+  const { router } = setup();
+
+  const response = router.dispatch(
+    request({
+      path: '/api/v1/auth/register',
+      method: 'POST',
+      body: { email: 'new@example.com', password: 'secretpw', username: 'newbie', role: 'admin' },
+    }),
+  );
+
+  const body = response.body as { data: { user: { role: string } } };
+  assert.equal(body.data.user.role, 'reader');
+});
+
+test('POST /api/v1/auth/login returns a token envelope for the right credentials', () => {
+  const { adapter, crypto, router } = setup();
+  createUser(adapter, crypto, 'ana@example.com', 'secretpw', 'ana', 'reader', NOW);
+
+  const response = router.dispatch(
+    request({ path: '/api/v1/auth/login', method: 'POST', body: { email: 'ana@example.com', password: 'secretpw' } }),
   );
 
   assert.equal(response.status, 200);
@@ -39,10 +74,10 @@ test('POST /api/v1/auth/login returns a token envelope for the right credentials
 
 test('POST /api/v1/auth/login returns the same error envelope for an unknown email and a wrong password', () => {
   const { adapter, crypto, router } = setup();
-  createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
+  createUser(adapter, crypto, 'ana@example.com', 'secretpw', 'ana', 'reader', NOW);
 
   const unknownEmail = router.dispatch(
-    request({ path: '/api/v1/auth/login', method: 'POST', body: { email: 'nobody@example.com', password: 'secret' } }),
+    request({ path: '/api/v1/auth/login', method: 'POST', body: { email: 'nobody@example.com', password: 'secretpw' } }),
   );
   const wrongPassword = router.dispatch(
     request({ path: '/api/v1/auth/login', method: 'POST', body: { email: 'ana@example.com', password: 'wrong' } }),
@@ -64,9 +99,9 @@ test('POST /api/v1/auth/login returns the same error envelope for an unknown ema
 
 test('GET /api/v1/auth/me returns the current user envelope for a valid token, without password', () => {
   const { adapter, crypto, router } = setup();
-  createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
+  createUser(adapter, crypto, 'ana@example.com', 'secretpw', 'ana', 'reader', NOW);
   const loginResponse = router.dispatch(
-    request({ path: '/api/v1/auth/login', method: 'POST', body: { email: 'ana@example.com', password: 'secret' } }),
+    request({ path: '/api/v1/auth/login', method: 'POST', body: { email: 'ana@example.com', password: 'secretpw' } }),
   );
   const token = (loginResponse.body as { data: { token: string } }).data.token;
 
@@ -92,9 +127,9 @@ test('GET /api/v1/auth/me without a body token is 401', () => {
 
 test('POST /api/v1/auth/me with _method GET and a token returns a 200 envelope', () => {
   const { adapter, crypto, router } = setup();
-  createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
+  createUser(adapter, crypto, 'ana@example.com', 'secretpw', 'ana', 'reader', NOW);
   const loginResponse = router.dispatch(
-    request({ path: '/api/v1/auth/login', method: 'POST', body: { email: 'ana@example.com', password: 'secret' } }),
+    request({ path: '/api/v1/auth/login', method: 'POST', body: { email: 'ana@example.com', password: 'secretpw' } }),
   );
   const token = (loginResponse.body as { data: { token: string } }).data.token;
 
@@ -108,9 +143,9 @@ test('POST /api/v1/auth/me with _method GET and a token returns a 200 envelope',
 
 test('GET /api/v1/auth/me with a tampered token is 401', () => {
   const { adapter, crypto, router } = setup();
-  createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
+  createUser(adapter, crypto, 'ana@example.com', 'secretpw', 'ana', 'reader', NOW);
   const loginResponse = router.dispatch(
-    request({ path: '/api/v1/auth/login', method: 'POST', body: { email: 'ana@example.com', password: 'secret' } }),
+    request({ path: '/api/v1/auth/login', method: 'POST', body: { email: 'ana@example.com', password: 'secretpw' } }),
   );
   const token = (loginResponse.body as { data: { token: string } }).data.token;
   const tampered = token.slice(0, -2) + 'xx';
@@ -134,9 +169,9 @@ test('the old /login and /me routes are removed', () => {
 
 test('/api/v1/auth/me with the token only in params (not body) is 401', () => {
   const { adapter, crypto, router } = setup();
-  createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
+  createUser(adapter, crypto, 'ana@example.com', 'secretpw', 'ana', 'reader', NOW);
   const loginResponse = router.dispatch(
-    request({ path: '/api/v1/auth/login', method: 'POST', body: { email: 'ana@example.com', password: 'secret' } }),
+    request({ path: '/api/v1/auth/login', method: 'POST', body: { email: 'ana@example.com', password: 'secretpw' } }),
   );
   const token = (loginResponse.body as { data: { token: string } }).data.token;
 
@@ -149,9 +184,9 @@ test('/api/v1/auth/me with the token only in params (not body) is 401', () => {
 
 test('no response from login or me ever contains a password field', () => {
   const { adapter, crypto, router } = setup();
-  createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
+  createUser(adapter, crypto, 'ana@example.com', 'secretpw', 'ana', 'reader', NOW);
   const loginResponse = router.dispatch(
-    request({ path: '/api/v1/auth/login', method: 'POST', body: { email: 'ana@example.com', password: 'secret' } }),
+    request({ path: '/api/v1/auth/login', method: 'POST', body: { email: 'ana@example.com', password: 'secretpw' } }),
   );
   const token = (loginResponse.body as { data: { token: string } }).data.token;
   const meResponse = router.dispatch(
@@ -164,9 +199,9 @@ test('no response from login or me ever contains a password field', () => {
 
 test('GET /api/v1/auth/me returns the username of the logged-in user', () => {
   const { adapter, crypto, router } = setup();
-  createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
+  createUser(adapter, crypto, 'ana@example.com', 'secretpw', 'ana', 'reader', NOW);
   const loginResponse = router.dispatch(
-    request({ path: '/api/v1/auth/login', method: 'POST', body: { email: 'ana@example.com', password: 'secret' } }),
+    request({ path: '/api/v1/auth/login', method: 'POST', body: { email: 'ana@example.com', password: 'secretpw' } }),
   );
   const token = (loginResponse.body as { data: { token: string } }).data.token;
 

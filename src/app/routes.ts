@@ -4,7 +4,7 @@ import type { LockAdapter } from '../core/lock-adapter.ts';
 import { Router } from '../core/router.ts';
 import { createAuthController } from './controllers/auth.controller.ts';
 import { createPageController } from './controllers/page.controller.ts';
-import { authMiddleware } from './middleware/auth.middleware.ts';
+import { requireAuth } from './middleware/auth.middleware.ts';
 
 export interface RouterDeps {
   adapter: SheetAdapter;
@@ -24,11 +24,12 @@ export function createRouter({ adapter, crypto, getSecret, now, lock, getAppUrl 
   router.get('/profile', pages.profile);
 
   const auth = createAuthController({ adapter, crypto, getSecret, now, lock });
-  const requireAuth = [authMiddleware(getSecret(), crypto, now)];
+  const mustAuth = [requireAuth({ adapter, crypto, getSecret, now })];
 
   router.group('/api/v1', [], (group) => {
+    group.post('/auth/register', auth.register);
     group.post('/auth/login', auth.login);
-    group.get('/auth/me', auth.me, requireAuth);
+    group.get('/auth/me', auth.me, mustAuth);
   });
 
   return router;

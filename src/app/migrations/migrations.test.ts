@@ -4,6 +4,7 @@ import { InMemorySheetAdapter } from '../../core/testing/in-memory-sheet-adapter
 import { MigrationRunner } from '../../core/migration.ts';
 import { migrations } from './index.ts';
 import { createUsersMigration } from './001_create_users.ts';
+import { addUsernameToUsersMigration } from './002_add_username_to_users.ts';
 
 test('app migrations create users with a username column', () => {
   const adapter = new InMemorySheetAdapter();
@@ -17,7 +18,7 @@ test('adding username to an already-migrated users sheet keeps existing users', 
   new MigrationRunner([createUsersMigration], adapter).migrate();
   adapter.appendRow('users', { id: 1, email: 'a@a.com', password: 'x' });
 
-  const applied = new MigrationRunner(migrations, adapter).migrate();
+  const applied = new MigrationRunner([createUsersMigration, addUsernameToUsersMigration], adapter).migrate();
 
   assert.deepEqual(applied, ['002_add_username_to_users']);
   assert.equal(adapter.getRows('users')[0].email, 'a@a.com');
@@ -26,9 +27,29 @@ test('adding username to an already-migrated users sheet keeps existing users', 
 
 test('rolling back removes the username column', () => {
   const adapter = new InMemorySheetAdapter();
-  const runner = new MigrationRunner(migrations, adapter);
+  const runner = new MigrationRunner([migrations[0], migrations[1]], adapter);
   runner.migrate();
 
   assert.deepEqual(runner.rollback(), ['002_add_username_to_users']);
   assert.equal(adapter.getHeaders('users').includes('username'), false);
+});
+
+test('app migrations add role and disabled columns to users', () => {
+  const adapter = new InMemorySheetAdapter();
+  new MigrationRunner(migrations, adapter).migrate();
+
+  assert.ok(adapter.getHeaders('users').includes('role'));
+  assert.ok(adapter.getHeaders('users').includes('disabled'));
+});
+
+test('rolling back the role/disabled migration removes both columns and keeps existing users', () => {
+  const adapter = new InMemorySheetAdapter();
+  const runner = new MigrationRunner(migrations, adapter);
+  runner.migrate();
+  adapter.appendRow('users', { id: 1, email: 'a@a.com', password: 'x' });
+
+  assert.deepEqual(runner.rollback(), ['003_add_role_and_disabled_to_users']);
+  assert.equal(adapter.getHeaders('users').includes('role'), false);
+  assert.equal(adapter.getHeaders('users').includes('disabled'), false);
+  assert.equal(adapter.getRows('users')[0].email, 'a@a.com');
 });

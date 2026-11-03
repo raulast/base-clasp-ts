@@ -2,8 +2,8 @@ import type { Request, Response } from '../../core/router.ts';
 import type { SheetAdapter } from '../../core/sheet-adapter.ts';
 import type { CryptoAdapter } from '../../core/crypto-adapter.ts';
 import type { LockAdapter } from '../../core/lock-adapter.ts';
-import { ok, unauthenticated } from '../../core/api.ts';
-import { authenticate, findUserById, LOGIN_ERROR_MESSAGE } from '../models/user.model.ts';
+import { ok, created, unauthenticated } from '../../core/api.ts';
+import { authenticate, createUser, LOGIN_ERROR_MESSAGE } from '../models/user.model.ts';
 
 export interface AuthControllerDeps {
   adapter: SheetAdapter;
@@ -14,11 +14,21 @@ export interface AuthControllerDeps {
 }
 
 export interface AuthController {
+  register: (request: Request) => Response;
   login: (request: Request) => Response;
   me: (request: Request) => Response;
 }
 
-export function createAuthController({ adapter, crypto, getSecret, now }: AuthControllerDeps): AuthController {
+export function createAuthController({ adapter, crypto, getSecret, now, lock }: AuthControllerDeps): AuthController {
+  const register = (request: Request): Response => {
+    const email = String(request.body.email ?? '');
+    const password = String(request.body.password ?? '');
+    const username = String(request.body.username ?? '');
+    const user = createUser(adapter, crypto, email, password, username, 'reader', now, lock);
+    const result = authenticate(adapter, crypto, getSecret(), email, password, now);
+    return created({ token: result.token, user });
+  };
+
   const login = (request: Request): Response => {
     const email = String(request.body.email ?? '');
     const password = String(request.body.password ?? '');
@@ -30,12 +40,11 @@ export function createAuthController({ adapter, crypto, getSecret, now }: AuthCo
   };
 
   const me = (request: Request): Response => {
-    const user = findUserById(adapter, request.context?.userId);
-    if (!user) {
+    if (!request.user) {
       throw unauthenticated('Unauthorized');
     }
-    return ok(user);
+    return ok(request.user);
   };
 
-  return { login, me };
+  return { register, login, me };
 }

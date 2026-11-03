@@ -12,6 +12,7 @@ export interface Request {
   body: Record<string, unknown>;
   pathParams?: Record<string, string>;
   context?: Record<string, unknown>;
+  user?: Record<string, unknown> | null;
 }
 
 export interface Response {
