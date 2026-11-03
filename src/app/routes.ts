@@ -7,6 +7,7 @@ import { createPageController } from './controllers/page.controller.ts';
 import { createPostsController } from './controllers/posts.controller.ts';
 import { createTagsController } from './controllers/tags.controller.ts';
 import { createCommentsController } from './controllers/comments.controller.ts';
+import { createUsersController } from './controllers/users.controller.ts';
 import { requireAuth, optionalAuth } from './middleware/auth.middleware.ts';
 
 export interface RouterDeps {
@@ -30,6 +31,7 @@ export function createRouter({ adapter, crypto, getSecret, now, lock, getAppUrl 
   const posts = createPostsController({ adapter, lock, now });
   const tags = createTagsController({ adapter, lock, now });
   const comments = createCommentsController({ adapter, lock, now });
+  const users = createUsersController({ adapter, lock, now });
   const mustAuth = [requireAuth({ adapter, crypto, getSecret, now })];
   const mayAuth = [optionalAuth({ adapter, crypto, getSecret, now })];
 
@@ -50,6 +52,9 @@ export function createRouter({ adapter, crypto, getSecret, now, lock, getAppUrl 
     group.get('/posts/:idOrSlug/comments', comments.list, mayAuth);
     group.post('/posts/:idOrSlug/comments', comments.create, mustAuth);
     group.delete('/comments/:id', comments.remove, mustAuth);
+
+    group.get('/users', users.list, mustAuth);
+    group.patch('/users/:id', users.update, mustAuth);
   });
 
   return router;

@@ -1,10 +1,11 @@
-import type { SheetAdapter, Row } from '../../core/sheet-adapter.ts';
+import type { CellValue, SheetAdapter, Row } from '../../core/sheet-adapter.ts';
 import type { CryptoAdapter } from '../../core/crypto-adapter.ts';
 import type { LockAdapter } from '../../core/lock-adapter.ts';
 import { noopLock } from '../../core/lock-adapter.ts';
 import { Model } from '../../core/model.ts';
+import { sameId } from '../../core/relations.ts';
 import { hashPassword, verifyPassword, signJwt } from '../../core/auth.ts';
-import { validationError, conflict } from '../../core/api.ts';
+import { validationError, conflict, notFound, forbidden } from '../../core/api.ts';
 
 export const USERS_SHEET = 'users';
 export const LOGIN_ERROR_MESSAGE = 'Invalid email or password';
@@ -127,4 +128,86 @@ export function findUserById(adapter: SheetAdapter, userId: unknown): Row | null
   const model = usersModel(adapter);
   const user = model.all({ where: (row) => row.id === userId })[0];
   return user ? sanitizeUser(user) : null;
+}
+
+const DEFAULT_USERS_PER_PAGE = 10;
+const MAX_USERS_PER_PAGE = 50;
+
+export interface UserDeps {
+  adapter: SheetAdapter;
+  lock?: LockAdapter;
+  now?: () => Date;
+}
+
+export interface ListUsersFilters {
+  page?: unknown;
+  perPage?: unknown;
+}
+
+export interface ListUsersResult {
+  data: Row[];
+  meta: { page: number; perPage: number; total: number; pages: number };
+}
+
+export function listUsers(deps: UserDeps, filters: ListUsersFilters): ListUsersResult {
+  const page = filters.page === undefined ? 1 : Number(filters.page);
+  const perPage = filters.perPage === undefined ? DEFAULT_USERS_PER_PAGE : Number(filters.perPage);
+  if (!Number.isInteger(page) || page < 1) {
+    throw validationError({ page: 'Page must be a positive integer' });
+  }
+  if (!Number.isInteger(perPage) || perPage < 1 || perPage > MAX_USERS_PER_PAGE) {
+    throw validationError({ perPage: `perPage must be between 1 and ${MAX_USERS_PER_PAGE}` });
+  }
+
+  const model = usersModel(deps.adapter, deps.now, deps.lock);
+  const rows = model.all();
+  const total = rows.length;
+  const start = (page - 1) * perPage;
+  const data = rows.slice(start, start + perPage).map((row) => sanitizeUser(row));
+
+  return { data, meta: { page, perPage, total, pages: Math.ceil(total / perPage) } };
+}
+
+export interface AdminActor {
+  id: CellValue;
+  role: string;
+  disabled: boolean;
+}
+
+export interface UpdateUserAdminInput {
+  role?: unknown;
+  disabled?: unknown;
+}
+
+export function updateUserAdmin(deps: UserDeps, actor: AdminActor, targetId: CellValue, input: UpdateUserAdminInput): Row {
+  const model = usersModel(deps.adapter, deps.now, deps.lock);
+  const target = model.find(targetId);
+  if (!target) {
+    throw notFound('User not found');
+  }
+  if (sameId(actor.id, target.id)) {
+    throw forbidden('Admins cannot change their own role or disabled state');
+  }
+
+  const details: Record<string, string> = {};
+  if (input.role !== undefined && !(ROLES as readonly string[]).includes(input.role as string)) {
+    details.role = 'Invalid role';
+  }
+  if (input.disabled !== undefined && typeof input.disabled !== 'boolean') {
+    details.disabled = 'disabled must be a boolean';
+  }
+  if (Object.keys(details).length > 0) {
+    throw validationError(details);
+  }
+
+  const changes: Partial<Row> = {};
+  if (input.role !== undefined) {
+    changes.role = input.role as string;
+  }
+  if (input.disabled !== undefined) {
+    changes.disabled = input.disabled as boolean;
+  }
+
+  const updated = model.update(target.id, changes) as Row;
+  return sanitizeUser(updated);
 }

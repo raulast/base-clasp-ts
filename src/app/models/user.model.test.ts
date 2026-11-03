@@ -6,7 +6,7 @@ import { NodeCryptoAdapter } from '../../core/testing/node-crypto-adapter.ts';
 import { hashPassword } from '../../core/auth.ts';
 import type { CryptoAdapter } from '../../core/crypto-adapter.ts';
 import { HttpError } from '../../core/api.ts';
-import { createUser, authenticate, findUserById, sanitizeUser, normalizeRole, isDisabled, MAX_PASSWORD_LENGTH } from './user.model.ts';
+import { createUser, authenticate, findUserById, sanitizeUser, normalizeRole, isDisabled, listUsers, updateUserAdmin, MAX_PASSWORD_LENGTH } from './user.model.ts';
 
 const SECRET = 'test-secret';
 const NOW = () => new Date(1700000000000);
@@ -243,4 +243,115 @@ test('authenticate rejects an over-long password without hashing it', () => {
 
   assert.equal(result.ok, false);
   assert.equal(hmacCalls, 0);
+});
+
+function setupWithRole() {
+  const adapter = new InMemorySheetAdapter();
+  adapter.seed('users', ['id', 'email', 'username', 'password', 'role', 'disabled', 'created_at', 'updated_at', 'deleted_at']);
+  const crypto = new NodeCryptoAdapter();
+  return { adapter, crypto };
+}
+
+test('listUsers returns sanitized users without passwords', () => {
+  const { adapter, crypto } = setupWithRole();
+  createUser(adapter, crypto, 'ana@example.com', 'secretpw', 'ana', 'reader', NOW);
+  createUser(adapter, crypto, 'bob@example.com', 'secretpw', 'bob', 'author', NOW);
+
+  const { data, meta } = listUsers({ adapter, now: NOW }, {});
+
+  assert.equal(data.length, 2);
+  assert.equal(meta.total, 2);
+  for (const user of data) {
+    assert.ok(!('password' in user));
+    assert.ok('email' in user && 'username' in user && 'role' in user && 'disabled' in user && 'created_at' in user);
+  }
+});
+
+test('listUsers rejects an out-of-range perPage', () => {
+  const { adapter } = setupWithRole();
+
+  assert.throws(
+    () => listUsers({ adapter, now: NOW }, { perPage: 999 }),
+    (error: unknown) => error instanceof HttpError && error.status === 422,
+  );
+});
+
+test('updateUserAdmin promotes a reader to author', () => {
+  const { adapter, crypto } = setupWithRole();
+  const admin = createUser(adapter, crypto, 'admin@example.com', 'secretpw', 'admin1', 'admin', NOW);
+  const target = createUser(adapter, crypto, 'ana@example.com', 'secretpw', 'ana', 'reader', NOW);
+
+  const updated = updateUserAdmin({ adapter, now: NOW }, { id: admin.id, role: 'admin', disabled: false }, target.id, { role: 'author' });
+
+  assert.equal(updated.role, 'author');
+  assert.ok(!('password' in updated));
+});
+
+test('updateUserAdmin disables a user', () => {
+  const { adapter, crypto } = setupWithRole();
+  const admin = createUser(adapter, crypto, 'admin@example.com', 'secretpw', 'admin1', 'admin', NOW);
+  const target = createUser(adapter, crypto, 'ana@example.com', 'secretpw', 'ana', 'reader', NOW);
+
+  const updated = updateUserAdmin({ adapter, now: NOW }, { id: admin.id, role: 'admin', disabled: false }, target.id, { disabled: true });
+
+  assert.equal(updated.disabled, true);
+});
+
+test('updateUserAdmin rejects self-demotion and self-disable', () => {
+  const { adapter, crypto } = setupWithRole();
+  const admin = createUser(adapter, crypto, 'admin@example.com', 'secretpw', 'admin1', 'admin', NOW);
+  const actor = { id: admin.id, role: 'admin', disabled: false };
+
+  assert.throws(
+    () => updateUserAdmin({ adapter, now: NOW }, actor, admin.id, { role: 'reader' }),
+    (error: unknown) => error instanceof HttpError && error.status === 403,
+  );
+  assert.throws(
+    () => updateUserAdmin({ adapter, now: NOW }, actor, admin.id, { disabled: true }),
+    (error: unknown) => error instanceof HttpError && error.status === 403,
+  );
+});
+
+test('updateUserAdmin rejects an invalid role or non-boolean disabled', () => {
+  const { adapter, crypto } = setupWithRole();
+  const admin = createUser(adapter, crypto, 'admin@example.com', 'secretpw', 'admin1', 'admin', NOW);
+  const target = createUser(adapter, crypto, 'ana@example.com', 'secretpw', 'ana', 'reader', NOW);
+  const actor = { id: admin.id, role: 'admin', disabled: false };
+
+  assert.throws(
+    () => updateUserAdmin({ adapter, now: NOW }, actor, target.id, { role: 'superadmin' }),
+    (error: unknown) => error instanceof HttpError && error.status === 422,
+  );
+  assert.throws(
+    () => updateUserAdmin({ adapter, now: NOW }, actor, target.id, { disabled: 'yes' as unknown as boolean }),
+    (error: unknown) => error instanceof HttpError && error.status === 422,
+  );
+});
+
+test('updateUserAdmin ignores email, password and username changes', () => {
+  const { adapter, crypto } = setupWithRole();
+  const admin = createUser(adapter, crypto, 'admin@example.com', 'secretpw', 'admin1', 'admin', NOW);
+  const target = createUser(adapter, crypto, 'ana@example.com', 'secretpw', 'ana', 'reader', NOW);
+  const actor = { id: admin.id, role: 'admin', disabled: false };
+
+  const updated = updateUserAdmin(
+    { adapter, now: NOW },
+    actor,
+    target.id,
+    { role: 'author', email: 'hacked@example.com', username: 'hacked', password: 'hacked1234' } as never,
+  );
+
+  assert.equal(updated.email, 'ana@example.com');
+  assert.equal(updated.username, 'ana');
+});
+
+test('updateUserAdmin 404s on a missing target', () => {
+  const { adapter, crypto } = setupWithRole();
+  const admin = createUser(adapter, crypto, 'admin@example.com', 'secretpw', 'admin1', 'admin', NOW);
+  const actor = { id: admin.id, role: 'admin', disabled: false };
+
+  assert.throws(
+    () => updateUserAdmin({ adapter, now: NOW }, actor, 999999, { disabled: true }),
+    (error: unknown) => error instanceof HttpError && error.status === 404,
+  );
 });
