@@ -1,6 +1,7 @@
 import type { CellValue, Row, SheetAdapter } from './sheet-adapter';
 import type { LockAdapter } from './lock-adapter.ts';
 import { noopLock } from './lock-adapter.ts';
+import { sameId } from './relations.ts';
 
 export interface ModelQuery {
   where?: (row: Row) => boolean;
@@ -107,6 +108,18 @@ export class Model {
         this.adapter.deleteRow(this.sheetName, index);
       }
       return true;
+    });
+  }
+
+  firstOrCreate(match: Row, defaults: Row = {}): { row: Row; created: boolean } {
+    return this.lock.withLock(() => {
+      const existing = this.all().find((row) =>
+        Object.entries(match).every(([key, value]) => sameId(row[key], value)),
+      );
+      if (existing) {
+        return { row: existing, created: false };
+      }
+      return { row: this.create({ ...defaults, ...match }), created: true };
     });
   }
 

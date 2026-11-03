@@ -189,3 +189,70 @@ test('withLock exposes the underlying lock for callers that need to wrap several
   assert.equal(result, 'value');
   assert.equal(lock.acquisitions, 1);
 });
+
+test('firstOrCreate returns an existing non-deleted matching row with created: false', () => {
+  const adapter = new InMemorySheetAdapter();
+  adapter.seed('users', ['id', 'email', 'role'], [{ id: 1, email: 'a@a.com', role: 'admin' }]);
+  const users = new Model('users', adapter, FIXED_NOW);
+
+  const result = users.firstOrCreate({ email: 'a@a.com' }, { role: 'reader' });
+
+  assert.equal(result.created, false);
+  assert.deepEqual(result.row, { id: 1, email: 'a@a.com', role: 'admin' });
+});
+
+test('firstOrCreate creates a new row merging defaults with match when nothing matches', () => {
+  const adapter = new InMemorySheetAdapter();
+  adapter.seed('users', ['id', 'email', 'role'], []);
+  const users = new Model('users', adapter, FIXED_NOW);
+
+  const result = users.firstOrCreate({ email: 'b@b.com' }, { role: 'reader' });
+
+  assert.equal(result.created, true);
+  assert.equal(result.row.email, 'b@b.com');
+  assert.equal(result.row.role, 'reader');
+});
+
+test('firstOrCreate match wins over defaults when both specify the same key', () => {
+  const adapter = new InMemorySheetAdapter();
+  adapter.seed('users', ['id', 'email', 'role'], []);
+  const users = new Model('users', adapter, FIXED_NOW);
+
+  const result = users.firstOrCreate({ role: 'admin' }, { role: 'reader' });
+
+  assert.equal(result.row.role, 'admin');
+});
+
+test('firstOrCreate ignores soft-deleted rows when matching', () => {
+  const adapter = new InMemorySheetAdapter();
+  adapter.seed('users', ['id', 'email', 'deleted_at'], [{ id: 1, email: 'a@a.com', deleted_at: 1700000000000 }]);
+  const users = new Model('users', adapter, FIXED_NOW);
+
+  const result = users.firstOrCreate({ email: 'a@a.com' });
+
+  assert.equal(result.created, true);
+  assert.equal(adapter.getRows('users').length, 2);
+});
+
+test('firstOrCreate matches values across string and number representations', () => {
+  const adapter = new InMemorySheetAdapter();
+  adapter.seed('tags', ['id', 'name'], [{ id: 5, name: 'ts' }]);
+  const tags = new Model('tags', adapter, FIXED_NOW);
+
+  const result = tags.firstOrCreate({ id: '5' });
+
+  assert.equal(result.created, false);
+  assert.equal(result.row.id, 5);
+});
+
+test('firstOrCreate runs under a single lock acquisition', () => {
+  const adapter = new InMemorySheetAdapter();
+  adapter.seed('tags', ['id', 'name'], []);
+  const lock = new InMemoryLockAdapter();
+  const tags = new Model('tags', adapter, FIXED_NOW, lock);
+
+  tags.firstOrCreate({ name: 'ts' });
+
+  assert.equal(lock.acquisitions, 1);
+  assert.equal(lock.releases, 1);
+});
