@@ -133,9 +133,34 @@ test('app migrations create a comments sheet with soft delete', () => {
 
 test('rolling back the comments migration drops the sheet', () => {
   const adapter = new InMemorySheetAdapter();
-  const runner = new MigrationRunner(migrations, adapter);
+  const runner = new MigrationRunner(migrations.slice(0, 7), adapter);
   runner.migrate();
 
   assert.deepEqual(runner.rollback(), ['007_create_comments']);
   assert.equal(adapter.sheetExists('comments'), false);
+});
+
+test('app migrations create a media sheet with soft delete', () => {
+  const adapter = new InMemorySheetAdapter();
+  new MigrationRunner(migrations, adapter).migrate();
+
+  const headers = adapter.getHeaders('media');
+  assert.ok(headers.includes('post_id'));
+  assert.ok(headers.includes('owner_id'));
+  assert.ok(headers.includes('drive_file_id'));
+  assert.ok(headers.includes('name'));
+  assert.ok(headers.includes('mime_type'));
+  assert.ok(headers.includes('size'));
+  assert.ok(headers.includes('kind'));
+  assert.ok(headers.includes('is_public'));
+  assert.ok(headers.includes('deleted_at'));
+});
+
+test('rolling back the media migration drops the sheet', () => {
+  const adapter = new InMemorySheetAdapter();
+  const runner = new MigrationRunner(migrations, adapter);
+  runner.migrate();
+
+  assert.deepEqual(runner.rollback(), ['008_create_media']);
+  assert.equal(adapter.sheetExists('media'), false);
 });

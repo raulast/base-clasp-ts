@@ -12,12 +12,13 @@ import {
   type PostInput,
   type PostListFilters,
 } from '../models/post.model.ts';
-import type { PostUser } from '../policies/post.policy.ts';
+import type { PostUser, PostRecord } from '../policies/post.policy.ts';
 
 export interface PostsControllerDeps {
   adapter: SheetAdapter;
   lock?: LockAdapter;
   now?: () => Date;
+  onPostChanged?: (post: PostRecord) => void;
 }
 
 export interface PostsController {

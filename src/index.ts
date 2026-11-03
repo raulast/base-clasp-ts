@@ -6,6 +6,7 @@ import { GasSheetAdapter } from './core/gas-sheet-adapter.ts';
 import { GasCryptoAdapter, getScriptSecret } from './core/gas-crypto-adapter.ts';
 import { GasOutputAdapter, includeHtml } from './core/gas-output-adapter.ts';
 import { GasLockAdapter } from './core/gas-lock-adapter.ts';
+import { GasStorageAdapter } from './core/gas-storage-adapter.ts';
 import { createRouter } from './app/routes.ts';
 import { createUser as createUserWithAdapter } from './app/models/user.model.ts';
 import { migrations } from './app/migrations/index.ts';
@@ -16,6 +17,7 @@ import { seeders } from './app/seeders/index.ts';
 const adapter = new GasSheetAdapter();
 const crypto = new GasCryptoAdapter();
 const lock = new GasLockAdapter();
+const storage = new GasStorageAdapter();
 
 function router() {
   return createRouter({
@@ -24,6 +26,8 @@ function router() {
     getSecret: () => getScriptSecret('JWT_SECRET'),
     getAppUrl: () => ScriptApp.getService().getUrl() ?? '',
     lock,
+    storage,
+    getMediaFolderId: () => getScriptSecret('MEDIA_FOLDER_ID'),
   });
 }
 

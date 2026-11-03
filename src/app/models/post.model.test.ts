@@ -10,7 +10,9 @@ import {
   deletePost,
   findPostForUser,
   listPostsForUser,
+  toPostRecord,
   type PostDeps,
+  type PostRecord,
 } from './post.model.ts';
 
 const NOW = () => new Date(1700000000000);
@@ -402,4 +404,55 @@ test('listPostsForUser reads each sheet once, whatever the page size (no N+1)', 
   for (const sheet of ['users', 'tags', 'posts', 'post_tags']) {
     assert.ok((adapter.reads[sheet] ?? 0) <= 1, `${sheet} read ${adapter.reads[sheet]} times`);
   }
+});
+
+test('onPostChanged fires with the updated post after updatePost commits', () => {
+  const deps = setup();
+  const seen: PostRecord[] = [];
+  const withHook: PostDeps = { ...deps, onPostChanged: (post) => seen.push(post) };
+  const owner = asUser(author(withHook));
+  const post = createPost(withHook, owner, { title: 'Hook me' });
+  assert.equal(seen.length, 0, 'createPost does not fire the hook');
+
+  updatePost(withHook, owner, post.id, { status: 'published' });
+
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].id, post.id);
+  assert.equal(seen[0].status, 'published');
+});
+
+test('onPostChanged fires with a deleted post record after deletePost commits', () => {
+  const deps = setup();
+  const seen: PostRecord[] = [];
+  const withHook: PostDeps = { ...deps, onPostChanged: (post) => seen.push(post) };
+  const owner = asUser(author(withHook));
+  const post = createPost(withHook, owner, { title: 'Delete me' });
+
+  deletePost(withHook, owner, post.id);
+
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].id, post.id);
+  assert.notEqual(seen[0].deleted_at, null);
+  assert.notEqual(seen[0].deleted_at, '');
+});
+
+test('onPostChanged is never called when the deps do not provide it', () => {
+  const deps = setup();
+  const owner = asUser(author(deps));
+  const post = createPost(deps, owner, { title: 'No hook' });
+  assert.doesNotThrow(() => updatePost(deps, owner, post.id, { status: 'published' }));
+  assert.doesNotThrow(() => deletePost(deps, owner, post.id));
+});
+
+test('toPostRecord maps a sheet row to the policy-facing PostRecord shape', () => {
+  const deps = setup();
+  const owner = asUser(author(deps));
+  const post = createPost(deps, owner, { title: 'Record shape' });
+  const row = deps.adapter.getRows('posts').find((candidate) => candidate.id === post.id)!;
+
+  const record = toPostRecord(row);
+
+  assert.equal(record.id, post.id);
+  assert.equal(record.status, 'draft');
+  assert.equal(record.visibility, 'public');
 });

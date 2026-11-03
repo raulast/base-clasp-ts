@@ -34,6 +34,8 @@ export interface PostDeps {
   adapter: SheetAdapter;
   lock?: LockAdapter;
   now?: () => Date;
+  // Observer hook (media subscribes through routes.ts); the post model never imports storage.
+  onPostChanged?: (post: PostRecord) => void;
 }
 
 export interface PostInput {
@@ -95,7 +97,7 @@ function postTagsRelation(deps: PostDeps) {
   return belongsToMany(postTagsModel(deps), tagsModel(deps), 'post_id', 'tag_id');
 }
 
-function toPostRecord(row: Row): PostRecord {
+export function toPostRecord(row: Row): PostRecord {
   return {
     id: row.id,
     author_id: row.author_id,
@@ -323,6 +325,8 @@ export function updatePost(deps: PostDeps, user: PostUser | null, id: CellValue,
       postTagsRelation(deps).sync(updated.id, tagIds);
     }
 
+    deps.onPostChanged?.(toPostRecord(updated));
+
     return withRelations(deps, updated);
   });
 }
@@ -335,6 +339,10 @@ export function deletePost(deps: PostDeps, user: PostUser | null, id: CellValue)
       throw forbidden('You cannot delete this post');
     }
     posts.delete(row.id);
+    const deletedRow = posts.find(row.id, { includeDeleted: true });
+    if (deletedRow) {
+      deps.onPostChanged?.(toPostRecord(deletedRow));
+    }
   });
 }
 

@@ -6,6 +6,7 @@ import { createTagsMigration } from './004_create_tags.ts';
 import { createPostsMigration } from './005_create_posts.ts';
 import { createPostTagsMigration } from './006_create_post_tags.ts';
 import { createCommentsMigration } from './007_create_comments.ts';
+import { createMediaMigration } from './008_create_media.ts';
 
 export const migrations: Migration[] = [
   createUsersMigration,
@@ -15,4 +16,5 @@ export const migrations: Migration[] = [
   createPostsMigration,
   createPostTagsMigration,
   createCommentsMigration,
+  createMediaMigration,
 ];
