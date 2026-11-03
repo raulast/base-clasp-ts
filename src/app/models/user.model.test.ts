@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { InMemorySheetAdapter } from '../../core/testing/in-memory-sheet-adapter.ts';
+import { InMemoryLockAdapter } from '../../core/testing/in-memory-lock-adapter.ts';
 import { NodeCryptoAdapter } from '../../core/testing/node-crypto-adapter.ts';
 import { hashPassword } from '../../core/auth.ts';
 import type { CryptoAdapter } from '../../core/crypto-adapter.ts';
@@ -122,6 +123,16 @@ test('findUserById returns null for an unknown id', () => {
   const { adapter } = setup();
 
   assert.equal(findUserById(adapter, 999), null);
+});
+
+test('createUser runs its duplicate checks and insert inside one lock acquisition', () => {
+  const { adapter, crypto } = setup();
+  const lock = new InMemoryLockAdapter();
+
+  createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW, lock);
+
+  assert.equal(lock.acquisitions, 1);
+  assert.equal(lock.releases, 1);
 });
 
 test('sanitizeUser strips the password field', () => {

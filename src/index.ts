@@ -5,6 +5,7 @@ import { MigrationRunner } from './core/migration.ts';
 import { GasSheetAdapter } from './core/gas-sheet-adapter.ts';
 import { GasCryptoAdapter, getScriptSecret } from './core/gas-crypto-adapter.ts';
 import { GasOutputAdapter, includeHtml } from './core/gas-output-adapter.ts';
+import { GasLockAdapter } from './core/gas-lock-adapter.ts';
 import { createRouter } from './app/routes.ts';
 import { createUser as createUserWithAdapter } from './app/models/user.model.ts';
 import { migrations } from './app/migrations/index.ts';
@@ -12,6 +13,7 @@ import { isAdmin } from './app/admin.ts';
 
 const adapter = new GasSheetAdapter();
 const crypto = new GasCryptoAdapter();
+const lock = new GasLockAdapter();
 
 function router() {
   return createRouter({
@@ -19,6 +21,7 @@ function router() {
     crypto,
     getSecret: () => getScriptSecret('JWT_SECRET'),
     getAppUrl: () => ScriptApp.getService().getUrl() ?? '',
+    lock,
   });
 }
 
@@ -63,7 +66,7 @@ export function migrate(): string[] {
 
 export function createUser(email: string, password: string, username: string): unknown {
   assertAdmin();
-  return createUserWithAdapter(adapter, crypto, email, password, username);
+  return createUserWithAdapter(adapter, crypto, email, password, username, () => new Date(), lock);
 }
 
 /**

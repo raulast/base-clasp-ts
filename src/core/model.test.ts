@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { InMemorySheetAdapter } from './testing/in-memory-sheet-adapter.ts';
+import { InMemoryLockAdapter } from './testing/in-memory-lock-adapter.ts';
 import { Model } from './model.ts';
 
 const FIXED_NOW = () => new Date(1700000000000);
@@ -124,4 +125,67 @@ test('paginate slices rows and reports page metadata', () => {
   const page = users.paginate(2, 2);
 
   assert.deepEqual(page, { page: 2, perPage: 2, total: 5, pages: 3, data: [{ id: 3 }, { id: 4 }] });
+});
+
+test('create acquires the lock exactly once', () => {
+  const adapter = new InMemorySheetAdapter();
+  adapter.seed('users', ['id', 'email'], []);
+  const lock = new InMemoryLockAdapter();
+  const users = new Model('users', adapter, FIXED_NOW, lock);
+
+  users.create({ email: 'a@a.com' });
+
+  assert.equal(lock.acquisitions, 1);
+  assert.equal(lock.releases, 1);
+});
+
+test('update acquires the lock exactly once', () => {
+  const adapter = new InMemorySheetAdapter();
+  adapter.seed('users', ['id', 'email'], [{ id: 1, email: 'a@a.com' }]);
+  const lock = new InMemoryLockAdapter();
+  const users = new Model('users', adapter, FIXED_NOW, lock);
+
+  users.update(1, { email: 'b@b.com' });
+
+  assert.equal(lock.acquisitions, 1);
+  assert.equal(lock.releases, 1);
+});
+
+test('delete acquires the lock exactly once', () => {
+  const adapter = new InMemorySheetAdapter();
+  adapter.seed('users', ['id', 'email'], [{ id: 1, email: 'a@a.com' }]);
+  const lock = new InMemoryLockAdapter();
+  const users = new Model('users', adapter, FIXED_NOW, lock);
+
+  users.delete(1);
+
+  assert.equal(lock.acquisitions, 1);
+  assert.equal(lock.releases, 1);
+});
+
+test('create computes the next id inside the lock, after a competing writer appends a row on acquire', () => {
+  const adapter = new InMemorySheetAdapter();
+  adapter.seed('users', ['id', 'email'], [{ id: 1, email: 'a@a.com' }]);
+  const lock = new InMemoryLockAdapter({
+    onAcquire: () => {
+      adapter.appendRow('users', { id: 2, email: 'competitor@a.com' });
+    },
+  });
+  const users = new Model('users', adapter, FIXED_NOW, lock);
+
+  const created = users.create({ email: 'b@b.com' });
+
+  assert.equal(created.id, 3);
+});
+
+test('withLock exposes the underlying lock for callers that need to wrap several operations', () => {
+  const adapter = new InMemorySheetAdapter();
+  adapter.seed('users', ['id', 'email'], []);
+  const lock = new InMemoryLockAdapter();
+  const users = new Model('users', adapter, FIXED_NOW, lock);
+
+  const result = users.withLock(() => 'value');
+
+  assert.equal(result, 'value');
+  assert.equal(lock.acquisitions, 1);
 });

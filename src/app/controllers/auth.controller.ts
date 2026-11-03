@@ -1,6 +1,7 @@
 import type { Request, Response } from '../../core/router.ts';
 import type { SheetAdapter } from '../../core/sheet-adapter.ts';
 import type { CryptoAdapter } from '../../core/crypto-adapter.ts';
+import type { LockAdapter } from '../../core/lock-adapter.ts';
 import { ok, unauthenticated } from '../../core/api.ts';
 import { authenticate, findUserById, LOGIN_ERROR_MESSAGE } from '../models/user.model.ts';
 
@@ -9,6 +10,7 @@ export interface AuthControllerDeps {
   crypto: CryptoAdapter;
   getSecret: () => string;
   now?: () => Date;
+  lock?: LockAdapter;
 }
 
 export interface AuthController {

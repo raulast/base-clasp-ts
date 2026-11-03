@@ -1,5 +1,7 @@
 import type { SheetAdapter, Row } from '../../core/sheet-adapter.ts';
 import type { CryptoAdapter } from '../../core/crypto-adapter.ts';
+import type { LockAdapter } from '../../core/lock-adapter.ts';
+import { noopLock } from '../../core/lock-adapter.ts';
 import { Model } from '../../core/model.ts';
 import { hashPassword, verifyPassword, signJwt } from '../../core/auth.ts';
 
@@ -19,8 +21,8 @@ function getDummyHash(crypto: CryptoAdapter): string {
   return hash;
 }
 
-export function usersModel(adapter: SheetAdapter, now: () => Date = () => new Date()): Model {
-  return new Model(USERS_SHEET, adapter, now);
+export function usersModel(adapter: SheetAdapter, now: () => Date = () => new Date(), lock: LockAdapter = noopLock): Model {
+  return new Model(USERS_SHEET, adapter, now, lock);
 }
 
 export function sanitizeUser(user: Row): Row {
@@ -35,17 +37,20 @@ export function createUser(
   password: string,
   username: string,
   now: () => Date = () => new Date(),
+  lock: LockAdapter = noopLock,
 ): Row {
-  const model = usersModel(adapter, now);
-  const existing = model.all({ where: (row) => row.email === email });
-  if (existing.length > 0) {
-    throw new Error('Email already registered');
-  }
-  if (model.all({ where: (row) => row.username === username }).length > 0) {
-    throw new Error('Username already taken');
-  }
-  const created = model.create({ email, username, password: hashPassword(password, crypto) });
-  return sanitizeUser(created);
+  const model = usersModel(adapter, now, lock);
+  return model.withLock(() => {
+    const existing = model.all({ where: (row) => row.email === email });
+    if (existing.length > 0) {
+      throw new Error('Email already registered');
+    }
+    if (model.all({ where: (row) => row.username === username }).length > 0) {
+      throw new Error('Username already taken');
+    }
+    const created = model.create({ email, username, password: hashPassword(password, crypto) });
+    return sanitizeUser(created);
+  });
 }
 
 export interface LoginResult {
