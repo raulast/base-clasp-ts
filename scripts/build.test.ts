@@ -87,7 +87,7 @@ test('buildBundle of the real src/index.ts exposes every GAS global and bundles 
   };
   vm.runInNewContext(code, sandbox);
 
-  for (const name of ['doGet', 'doPost', 'api', 'include', 'migrate', 'createUser', 'main']) {
+  for (const name of ['doGet', 'doPost', 'api', 'include', 'migrate', 'createUser', 'seed', 'main']) {
     assert.equal(typeof sandbox[name], 'function', `expected ${name} to be a global function`);
   }
 
@@ -137,6 +137,7 @@ test('real bundle: createUser and migrate reject a non-admin active user without
 
   assert.throws(() => (sandbox.createUser as (...args: unknown[]) => unknown)('new@example.com', 'secret'), /Forbidden/);
   assert.throws(() => (sandbox.migrate as (...args: unknown[]) => unknown)(), /Forbidden/);
+  assert.throws(() => (sandbox.seed as (...args: unknown[]) => unknown)(), /Forbidden/);
 });
 
 test('real bundle: createUser and migrate reject an empty active user email', async () => {

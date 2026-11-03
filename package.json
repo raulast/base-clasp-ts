@@ -13,6 +13,7 @@
     "push": "pnpm clasp:config && clasp push",
     "deploy": "node --experimental-strip-types scripts/deploy.ts",
     "migrate": "node --experimental-strip-types scripts/deploy.ts --push-only && clasp run migrate",
+    "seed": "node --experimental-strip-types scripts/deploy.ts --push-only && clasp run seed",
     "pull": "pnpm clasp:config && clasp pull",
     "open": "pnpm clasp:config && clasp open"
   },

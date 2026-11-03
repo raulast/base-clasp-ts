@@ -10,6 +10,8 @@ import { createRouter } from './app/routes.ts';
 import { createUser as createUserWithAdapter } from './app/models/user.model.ts';
 import { migrations } from './app/migrations/index.ts';
 import { isAdmin } from './app/admin.ts';
+import { runSeeders } from './core/seeder.ts';
+import { seeders } from './app/seeders/index.ts';
 
 const adapter = new GasSheetAdapter();
 const crypto = new GasCryptoAdapter();
@@ -67,6 +69,11 @@ export function migrate(): string[] {
 export function createUser(email: string, password: string, username: string, role: string): unknown {
   assertAdmin();
   return createUserWithAdapter(adapter, crypto, email, password, username, role, () => new Date(), lock);
+}
+
+export function seed(): unknown {
+  assertAdmin();
+  return runSeeders(seeders, { adapter, lock, now: () => new Date() });
 }
 
 /**

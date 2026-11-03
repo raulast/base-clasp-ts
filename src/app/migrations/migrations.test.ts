@@ -44,7 +44,7 @@ test('app migrations add role and disabled columns to users', () => {
 
 test('rolling back the role/disabled migration removes both columns and keeps existing users', () => {
   const adapter = new InMemorySheetAdapter();
-  const runner = new MigrationRunner(migrations, adapter);
+  const runner = new MigrationRunner(migrations.slice(0, 3), adapter);
   runner.migrate();
   adapter.appendRow('users', { id: 1, email: 'a@a.com', password: 'x' });
 
@@ -52,4 +52,25 @@ test('rolling back the role/disabled migration removes both columns and keeps ex
   assert.equal(adapter.getHeaders('users').includes('role'), false);
   assert.equal(adapter.getHeaders('users').includes('disabled'), false);
   assert.equal(adapter.getRows('users')[0].email, 'a@a.com');
+});
+
+test('app migrations create a tags sheet', () => {
+  const adapter = new InMemorySheetAdapter();
+  new MigrationRunner(migrations, adapter).migrate();
+
+  const headers = adapter.getHeaders('tags');
+  assert.ok(headers.includes('name'));
+  assert.ok(headers.includes('slug'));
+  assert.ok(headers.includes('created_at'));
+  assert.ok(headers.includes('updated_at'));
+  assert.ok(headers.includes('deleted_at'));
+});
+
+test('rolling back the tags migration drops the tags sheet', () => {
+  const adapter = new InMemorySheetAdapter();
+  const runner = new MigrationRunner(migrations, adapter);
+  runner.migrate();
+
+  assert.deepEqual(runner.rollback(), ['004_create_tags']);
+  assert.equal(adapter.sheetExists('tags'), false);
 });
