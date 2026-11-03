@@ -86,7 +86,8 @@ https://script.google.com/home/projects/<SCRIPT_ID>/edit
    | Propiedad | Para qué sirve |
    |---|---|
    | `JWT_SECRET` | Firma los tokens de sesión. Usá un valor largo y aleatorio. |
-   | `ADMIN_EMAILS` | Emails (separados por coma) que pueden ejecutar `migrate` y `createUser`. |
+   | `ADMIN_EMAILS` | Emails (separados por coma) que pueden ejecutar `migrate`, `createUser` y `seed`. |
+   | `MEDIA_FOLDER_ID` | Carpeta de Drive donde se guardan los archivos subidos al blog (ver "Archivos en Drive" más abajo). |
 
    Para generar un `JWT_SECRET`:
 
@@ -114,14 +115,23 @@ src/
     schema-adapter.ts
     crypto-adapter.ts
     output-adapter.ts
-    gas-*-adapter.ts     # Implementaciones reales sobre SpreadsheetApp, Utilities, HtmlService
+    api.ts               # HttpError, envelope JSON (ok/fail), factories de error
+    relations.ts         # hasMany, belongsTo, belongsToMany (+ attach/detach/sync), sameId
+    seeder.ts            # Seeder, runSeeders
+    lock-adapter.ts      # LockAdapter, noopLock (concurrencia sobre Model.create/update/delete)
+    media-rules.ts       # Validación de uploads: MIME permitidos, tamaño máximo, nombre seguro
+    storage-adapter.ts   # Contrato para guardar/compartir/leer archivos (Drive)
+    slug.ts              # slugify()
+    gas-*-adapter.ts     # Implementaciones reales sobre SpreadsheetApp, Utilities, HtmlService, DriveApp, LockService
     testing/             # Dobles de test en memoria (no se incluyen en el bundle)
   app/                   # Tu aplicación
     routes.ts
     controllers/
     middleware/
     models/
+    policies/            # Reglas de autorización puras: (usuario, registro) -> boolean
     migrations/
+    seeders/             # Datos iniciales idempotentes (tags, etc.)
     views/               # Templates .html de HtmlService
 scripts/
   build.ts               # Bundle con esbuild hacia dist/
@@ -136,7 +146,7 @@ Apps Script **no tiene sistema de módulos**: cada archivo subido se ejecuta com
 - `pnpm typecheck` corre `tsc` solo para chequear tipos (no genera archivos).
 - `scripts/build.ts` usa **esbuild** para empaquetar `src/index.ts` y todo lo que importa en un único `dist/bundle.js`, sin sintaxis de módulos.
 - Por cada `export` de `src/index.ts`, el build agrega al final del bundle una función global con el mismo nombre. Así Apps Script encuentra `doGet`, `doPost`, triggers y las funciones que corrés desde el editor o con `clasp run`.
-- Los `.html` de `src/` se copian a `dist/` con la misma ruta: `src/app/views/index.html` queda en GAS como `app/views/index`.
+- Los `.html` de `src/` se copian a `dist/` con la misma ruta: `src/app/views/home.html` queda en GAS como `app/views/home`.
 
 Consecuencias prácticas:
 
@@ -220,21 +230,23 @@ Reglas: la columna `id` se autoincrementa; `created_at`/`updated_at` se completa
 
 ### 3. Rutas, controladores y middleware
 
-Las rutas se registran en `src/app/routes.ts`, dentro de `createRouter`:
+Las rutas se registran en `src/app/routes.ts`, dentro de `createRouter`. `routes.ts` solo mapea método + path (+ middleware) a una acción de controlador: nunca lee `request.body`, nunca arma la respuesta, nunca llama a un modelo directamente. La lógica vive en los controladores (`src/app/controllers/`) y en los modelos (`src/app/models/`):
 
 ```typescript
-router.get('/posts', () => view('app/views/posts', { posts: postsModel(adapter).all() }));
-
-router.post('/posts', (request) => {
-  const post = postsModel(adapter).create({ title: String(request.body.title ?? '') });
-  return { status: 200, body: post };
-}, requireAuth);
+router.group('/api/v1', [], (group) => {
+  group.get('/posts', posts.list, mayAuth);
+  group.post('/posts', posts.create, mustAuth);
+  group.patch('/posts/:id', posts.update, mustAuth);
+});
 ```
 
-- Un handler recibe un `Request` (`path`, `method`, `params`, `body`, `context`) y devuelve `{ status, body }`.
-- Un middleware recibe `(request, next)`: llama a `next()` para seguir o devuelve una respuesta para cortar. `authMiddleware` valida el token del body y deja `context.userId` para el handler.
-- El matching es exacto por `path` + método. Una web app de GAS no tiene rutas reales en la URL, así que `doGet`/`doPost` toman la ruta del parámetro `route`: `https://script.google.com/macros/s/<ID>/exec?route=/posts`.
-- **Apps Script no permite elegir el status HTTP**: siempre responde 200. El `status` de la respuesta sirve dentro del framework (middleware, tests y el cliente), no llega al navegador como código HTTP.
+- Un handler recibe un `Request` (`path`, `method`, `params`, `pathParams`, `body`, `user`) y devuelve `{ status, body }`. `router.group(prefix, middleware, build)` agrupa rutas bajo un prefijo y una lista de middleware compartidos.
+- Soporta segmentos `:nombre` (`/posts/:id`), que quedan en `request.pathParams` (`request.params` es siempre el query string).
+- Un middleware recibe `(request, next)`: llama a `next()` para seguir o lanza/devuelve una respuesta para cortar. `requireAuth`/`optionalAuth` (`src/app/middleware/auth.middleware.ts`) validan el token del body y dejan el usuario en `request.user`.
+- El matching es exacto por `path` + método; las rutas estáticas ganan sobre las de parámetro. Si el path existe para otro método, responde 405 con `details.allowed`; si no existe para ningún método, 404.
+- Como no hay rutas reales en la URL de una web app de GAS, `doGet`/`doPost` toman la ruta del parámetro `route`: `$APP_URL?route=/posts`. El `event` de GAS sí trae `pathInfo` (todo lo que sigue a `/exec/`), pero ese camino redirige a cualquier cliente anónimo a la pantalla de inicio de sesión de Google antes de llegar al script (verificado en una implementación `ANYONE_ANONYMOUS`), así que no sirve para una API pública.
+- **Apps Script no permite elegir el status HTTP**: siempre responde 200. El `status` de la respuesta es el código del envelope JSON (ver `docs/api.md`), no llega al navegador como código HTTP.
+- Cualquier `HttpError` (`src/core/api.ts`) lanzado en un middleware o handler se convierte en el envelope de error correspondiente; cualquier otro error no controlado se convierte en 500 `INTERNAL` con un mensaje fijo, nunca el mensaje ni el stack original.
 
 ### 4. Vistas
 
@@ -248,28 +260,20 @@ Los templates van en `src/app/views/` y se devuelven con `view(nombre, datos)`; 
 - `<?= ... ?>` escapa HTML: usalo para cualquier dato.
 - `<?!= ... ?>` no escapa: usalo solo para `include` de parciales, nunca con datos del usuario.
 - `include(nombre, datos)` evalúa el parcial como template: sus scriptlets solo ven los `datos` que le pases, no las variables de la vista que lo incluye.
-- La app de ejemplo trae dos vistas, `/` (login) y `/profile`, y tres parciales: `head` (Pico CSS), `header` (navegación) y `session` (manejo del token).
+- La app de ejemplo trae las vistas `/` (home del blog), `/posts/:slug` (detalle), `/login`, `/register`, `/profile`, `/dashboard`, `/dashboard/posts/new` y `/dashboard/posts/:id/edit` (editor), `/admin/users` y `/admin/tags`; y parciales `head` (Pico CSS), `header` (navegación), `session` (manejo del token) y `client` (`App`, el cliente JS compartido para hablar con la API).
 - **Links entre vistas:** la web app corre dentro de un iframe de `googleusercontent.com`, así que un link relativo como `?route=/profile` no apunta a tu script. Cada vista recibe `appUrl` (`ScriptApp.getService().getUrl()`, que en `/dev` devuelve la URL `/dev`) y los links se arman así: `<a href="<?= appUrl ?>?route=/profile">`.
-- **Sesión compartida:** el parcial `session` expone `AppSession` (`getToken`, `setToken`, `clear`, `loadUser`). El token vive en `sessionStorage`, que se comparte entre las vistas de la misma pestaña y se borra al cerrarla. Una vista protegida solo hace `AppSession.loadUser(mostrarDatos, mostrarLogin)`, y `loadUser` valida el token contra `POST /me`.
-- Desde el navegador, hablá con el servidor con `google.script.run.api(ruta, body)`, que pasa por el mismo router y middleware y devuelve el `body` de la respuesta:
-
-  ```javascript
-  google.script.run
-    .withSuccessHandler((result) => { /* ... */ })
-    .api('/login', { email, password });
-  ```
-
-- En el DOM, mostrá datos con `textContent`, no con `innerHTML`.
+- **Sesión compartida:** el parcial `session` expone `AppSession` (token en `sessionStorage`, compartido entre las vistas de la misma pestaña y borrado al cerrarla) junto con el rol del usuario cargado. El parcial `client` expone `App`, que envías a la API con el mismo contrato que un cliente externo (ver `docs/api.md`): `App.call(route, body)`, `App.get(route, params)` (manda `_method: GET` + token), `App.send(route, method, body)` (POST/PATCH/DELETE + token), y helpers de DOM (`App.el`, `App.paragraphs`) que solo usan `textContent`, nunca `innerHTML`.
+- Las vistas son shells sin datos: todo lo que muestran lo piden a la API con las mismas políticas que un cliente externo, así que ninguna página necesita chequear permisos del lado del servidor — la API es la única autoridad.
 
 ### 5. Autenticación
 
-La app de ejemplo trae `POST /login` (email + password → `{ token }`) y `POST /me` (usuario actual, requiere `token` en el body):
+La API trae `POST /api/v1/auth/register` (público, siempre crea un `reader`), `POST /api/v1/auth/login` (email + password → `{ token }`) y `GET /api/v1/auth/me` (usuario actual, requiere token; también alcanzable como `POST` + `_method: "GET"`). Detalle completo de la API en `docs/api.md`.
 
 - Los passwords se guardan como `iteraciones$salt$hash` (salt aleatorio + HMAC-SHA256 iterado; Apps Script no tiene bcrypt). El campo `password` nunca aparece en una respuesta.
 - Los tokens son JWT HS256 firmados con `JWT_SECRET`, con expiración obligatoria.
-- El token se guarda en `sessionStorage` y viaja solo en el body de `google.script.run`, **nunca en la URL** (quedaría en el historial y en los logs).
-- Un email inexistente y un password incorrecto devuelven el mismo error, con el mismo trabajo de cómputo, para no revelar qué emails existen.
-- No hay registro público: los usuarios se crean con `createUser` (ver más abajo).
+- El token viaja solo en el body (nunca hay header `Authorization`: el `event` de GAS no expone headers personalizados al script) y, desde el navegador, se guarda en `sessionStorage` y nunca en la URL (quedaría en el historial y en los logs).
+- Un email inexistente y un password incorrecto devuelven el mismo error, con el mismo trabajo de cómputo, para no revelar qué emails existen. Un usuario deshabilitado recibe el mismo error genérico.
+- Roles: `admin` | `author` | `reader`. El registro público siempre crea un `reader`; los admins cambian roles y habilitan/deshabilitan usuarios desde `/admin/users`. El primer admin se crea desde la terminal o el editor (ver "Primer admin" más abajo).
 
 ### 6. Funciones globales y seguridad
 
@@ -287,7 +291,7 @@ Todo lo que exportás desde `src/index.ts` queda como función global, y **cualq
 1. `pnpm run deploy --push-only` (sube el código sin tocar implementaciones, porque todavía no existe ninguna).
 2. En el editor (`pnpm open`): **Implementar → Nueva implementación → Aplicación web**.
 3. Elegí **Ejecutar como** y **Quién tiene acceso** según tu caso. Con "Ejecutar como: yo", la app lee y escribe las sheets con tus permisos.
-4. Abrí la URL `.../exec`: `GET /` muestra la pantalla de login de ejemplo.
+4. Abrí la URL `.../exec`: `GET /` muestra la home del blog de ejemplo.
 
 ### Despliegues siguientes
 
@@ -354,16 +358,16 @@ Se configura en el bloque `webapp` de `src/appsscript.json`:
 | `USER_DEPLOYING` | El dueño del script | Para esta app: las sheets se leen y escriben con tus permisos y los visitantes no necesitan acceso a ellas |
 | `USER_ACCESSING` | Quien abre la URL | Cuando cada usuario debe operar sobre sus propios archivos. Cada visitante necesita acceso a la sheet y autorizar el script; no es compatible con `ANYONE_ANONYMOUS` |
 
-La app de ejemplo usa `USER_DEPLOYING` + `ANYONE_ANONYMOUS`: el login lo resuelve la propia app (usuarios en la sheet y JWT), así que los visitantes no necesitan cuenta de Google. `migrate` y `createUser` siguen protegidos, porque un visitante anónimo no tiene email y `assertAdmin()` lo rechaza.
+La app de ejemplo usa `USER_DEPLOYING` + `ANYONE_ANONYMOUS`: el login lo resuelve la propia app (usuarios en la sheet y JWT), así que los visitantes no necesitan cuenta de Google. `migrate`, `createUser` y `seed` siguen protegidos, porque un visitante anónimo no tiene email y `assertAdmin()` lo rechaza.
 
 Para cambiarlo, editá `src/appsscript.json` y corré `pnpm run deploy`: el redeploy publica una versión nueva con ese manifest. **No lo cambies desde el editor de Apps Script** (Administrar implementaciones): eso modifica el manifest remoto y el próximo deploy frena con `Skipping push.`.
 
 `executionApi.access` admite los mismos cuatro valores, pero define quién puede invocar funciones con `clasp run`. Dejalo en `MYSELF`.
 
 
-## Ejecutar `migrate` y `createUser` desde la terminal
+## Ejecutar `migrate`, `createUser` y `seed` desde la terminal
 
-`pnpm migrate` hace dos cosas: build + `clasp push` (sin redeploy, equivalente a `pnpm run deploy --push-only`) y después `clasp run migrate`, que ejecuta la función ya subida a través de la **Apps Script Execution API**.
+`pnpm migrate` hace dos cosas: build + `clasp push` (sin redeploy, equivalente a `pnpm run deploy --push-only`) y después `clasp run migrate`, que ejecuta la función ya subida a través de la **Apps Script Execution API**. `pnpm seed` hace lo mismo con la función `seed` (ver "Seeders" más abajo).
 
 Son dos logins distintos:
 
@@ -396,19 +400,23 @@ Ese mensaje significa que la Execution API rechazó las credenciales (`NOT_AUTHO
 
 7. **Verificar.** Tiene que aparecer un `.clasprc.json` en la raíz del repo. Si no está, `clasp run` sigue usando las credenciales por defecto y va a fallar.
 
-### Correr las migraciones y crear usuarios
+### Correr las migraciones, crear usuarios y poblar datos
 
 ```bash
 pnpm migrate
 ```
 
 ```bash
-clasp run createUser -p '["vos@ejemplo.com", "un-password-largo", "tu-username"]'
+clasp run createUser -p '["vos@ejemplo.com", "un-password-largo", "tu-username", "admin"]'
+```
+
+```bash
+pnpm seed
 ```
 
 El password del segundo comando queda en el historial de tu shell; borralo después.
 
-Antes de correrlos, cargá tu email en la Script Property `ADMIN_EMAILS`: si no, las dos funciones responden `Forbidden`.
+Antes de correrlos, cargá tu email en la Script Property `ADMIN_EMAILS`: si no, las tres funciones responden `Forbidden`.
 
 ### Alternativa sin Google Cloud: correr las funciones desde el editor
 
@@ -426,12 +434,14 @@ Si todavía no configuraste las credenciales, podés ejecutar a mano el código 
 
    ```javascript
    function tmp() {
-     createUser('vos@ejemplo.com', 'un-password-largo', 'tu-username');
+     createUser('vos@ejemplo.com', 'un-password-largo', 'tu-username', 'admin');
    }
    ```
 
 2. Guardá, elegí `tmp` en el selector de funciones y tocá **Ejecutar**.
 3. **Borrá `tmp` enseguida y guardá.** Mientras exista, el password queda en texto plano en el código del proyecto. Además, como cualquier función global, `tmp` se puede invocar desde el navegador con `google.script.run` (`assertAdmin()` igual bloquea a quien no sea admin).
+
+**`seed`:** no necesita argumentos, así que no hace falta el patrón `tmp()`: elegí `seed` directamente en el selector de funciones y tocá **Ejecutar**. Es idempotente, correrla dos veces no crea datos duplicados.
 
 El próximo `pnpm deploy` reemplaza el bundle y elimina los archivos que no están en `dist/`, así que ese cambio manual no sobrevive a un deploy. No lo uses para nada permanente: el código permanente va en `src/`.
 
@@ -476,6 +486,110 @@ Si necesitás otro servicio avanzado, agregalo en `src/appsscript.json` dentro d
 ```
 
 Volvé a correr `pnpm deploy` para que el cambio se refleje en el proyecto de Apps Script.
+
+## Blog de ejemplo
+
+Además del framework, el repo trae un blog de ejemplo completo: posts con estado (`draft`/`published`/`archived`) y visibilidad (`public`/`members`/`private`), comentarios, tags, roles y archivos de Drive. Es la demostración de cómo construir algo real arriba del framework; podés usarlo como base o borrarlo. La referencia completa de su API JSON (`/api/v1/...`, envelope, códigos de error, límites, ejemplos con curl) vive en [`docs/api.md`](docs/api.md).
+
+### Roles
+
+| Rol | Puede |
+|---|---|
+| `reader` | Leer contenido público y de miembros, comentar en posts publicados que puede ver |
+| `author` | Todo lo de `reader`, más crear/editar/borrar sus propios posts y subir/borrar su propia media |
+| `admin` | Todo: cualquier post, cualquier usuario (rol, habilitar/deshabilitar), crear tags |
+
+### Estados y visibilidad
+
+Un post tiene dos campos independientes:
+
+- **`status`**: `draft` → `published` (fija la fecha de publicación la primera vez) → `archived` → `draft`, o `published` → `draft`. Cualquier otra transición se rechaza.
+- **`visibility`**: `public` (cualquiera), `members` (cualquier usuario logueado) o `private` (solo el autor y los admins).
+
+Solo se puede leer un post ajeno cuando está `published` **y** su visibilidad lo permite; el autor y los admins siempre ven sus propios posts/todos los posts, sin importar el estado.
+
+### Guía de usuario (sin terminal)
+
+Todo esto se hace desde el navegador, sin tocar la línea de comandos:
+
+1. **Registrarse**: `/register`. Queda logueado como `reader`.
+2. **Convertirse en autor**: un admin entra a `/admin/users`, busca el usuario y le cambia el rol a `author`.
+3. **Escribir y publicar**: con rol `author` (o `admin`), aparece "Dashboard" en la navegación. Desde `/dashboard` → "New post" se completa título, resumen, cuerpo, visibilidad y tags; el post arranca en `draft`. Desde el editor de un post existente se cambia el estado (solo a las transiciones permitidas desde el estado actual).
+4. **Subir archivos**: en el editor de un post ya creado, el panel de media deja elegir un archivo (imágenes, video, PDF, docx o zip, hasta 2 MB) y lo sube.
+5. **Comentar**: en `/posts/:slug`, cualquier usuario logueado ve el formulario de comentarios si el post está publicado y es visible para él.
+6. **Páginas de admin**: `/admin/users` (cambiar rol, habilitar/deshabilitar) y `/admin/tags` (crear tags nuevos).
+
+Los únicos pasos que siguen siendo de terminal/editor son los de configuración inicial (`migrate`, `seed`, crear el primer admin, habilitar el scope de Drive): son pasos de puesta en marcha del proyecto, no del flujo normal de un usuario.
+
+## Primer admin
+
+El registro público (`/register`, `POST /api/v1/auth/register`) siempre crea un usuario `reader`: nunca otorga `admin`, y tener tu email en `ADMIN_EMAILS` tampoco te hace admin dentro de la app (esa Script Property solo protege las funciones globales owner-only — `migrate`, `createUser`, `seed` — no es un rol de la aplicación). El primer admin se crea por una de estas dos vías:
+
+- **Desde la terminal**, con `clasp run` ya configurado (ver "Ejecutar `migrate`, `createUser` y `seed` desde la terminal"):
+
+  ```bash
+  clasp run createUser -p '["vos@ejemplo.com", "un-password-largo", "tu-username", "admin"]'
+  ```
+
+- **Desde el editor**, sin configurar `clasp run`, con el patrón `tmp()` ya documentado más arriba ("Alternativa sin Google Cloud: correr las funciones desde el editor"): una función temporal que llama a `createUser(email, password, username, 'admin')`, ejecutarla una vez y borrarla.
+
+Los dos caminos exigen tener tu email en `ADMIN_EMAILS` (`assertAdmin()` lo chequea). Una vez que existe un admin, el resto de los roles se maneja desde `/admin/users`, sin volver a la terminal.
+
+## Seeders
+
+Un seeder llena datos iniciales de forma idempotente: correrlo dos veces no duplica nada (usa `Model.firstOrCreate` por debajo). El único seeder de ejemplo (`src/app/seeders/tag.seeder.ts`) crea las tags `General`, `Tutorial`, `Apps Script`, `TypeScript`, `Google Sheets` y `Announcements`.
+
+Correrlo:
+
+```bash
+pnpm seed
+```
+
+o, desde el editor de Apps Script, elegí `seed` en el selector de funciones y tocá **Ejecutar** (no necesita argumentos). Tu email tiene que estar en `ADMIN_EMAILS`. La respuesta es un reporte por seeder: `[{ name, created, existing }]`.
+
+Para agregar un seeder propio, implementá `Seeder` (`{ name, run(ctx) }` en `src/core/seeder.ts`, con `ctx = { adapter, lock, now }`) usando `firstOrCreate` para que sea idempotente, y suma lo a la lista en `src/app/seeders/index.ts`.
+
+## Permisos (`oauthScopes`)
+
+`src/appsscript.json` fija explícitamente los scopes de OAuth que la app pide al autorizarse, en vez de dejar que Apps Script los infiera del código en cada deploy:
+
+```json
+"oauthScopes": [
+  "https://www.googleapis.com/auth/spreadsheets",
+  "https://www.googleapis.com/auth/drive",
+  "https://www.googleapis.com/auth/userinfo.email",
+  "https://www.googleapis.com/auth/script.scriptapp",
+  "https://www.googleapis.com/auth/script.container.ui"
+]
+```
+
+| Scope | Para qué lo usa esta app |
+|---|---|
+| `spreadsheets` | Todo el modelo de datos vive en Sheets (`SpreadsheetApp`, el `Sheets` advanced service) |
+| `drive` | Guardar, compartir y leer los archivos de media de los posts (`DriveApp`) |
+| `userinfo.email` | `Session.getActiveUser().getEmail()`, para `assertAdmin()` |
+| `script.scriptapp` | `ScriptApp.getService().getUrl()`, para armar los links entre vistas |
+| `script.container.ui` | Acceso a la UI del contenedor (menús, etc.) |
+
+**Por qué fijarlos a mano:** si dejás que Apps Script infiera los scopes, un deploy nuevo puede pedir scopes distintos sin que lo notes, y el manifest remoto queda desincronizado de `src/appsscript.json` (ver "El freno de seguridad `Skipping push.`"). Pinándolos, el manifest es explícito y versionado.
+
+**Agregar un servicio de Google nuevo (por ejemplo, Gmail) exige agregar su scope aquí.** El flujo guiado:
+
+1. Escribí el código que usa el servicio nuevo.
+2. `pnpm run deploy --push-only` para subir a `/dev` sin redesplegar.
+3. En el editor (`pnpm open`): **Configuración del proyecto → Mostrar el archivo de manifiesto**, para ver qué scopes detectó Apps Script al correr el código nuevo.
+4. Agregá el scope que falta a `oauthScopes` en `src/appsscript.json`.
+5. `pnpm run deploy --force` (manifest cambiado a propósito, ver "El freno de seguridad `Skipping push.`").
+6. Volvé a abrir la web app: Google te va a pedir reautorizar, porque el set de permisos cambió.
+
+## Archivos en Drive
+
+Los archivos que suben los posts (imágenes, video, PDF, docx, zip) se guardan en una carpeta de Google Drive, identificada por la Script Property `MEDIA_FOLDER_ID`.
+
+- **Creá la carpeta** en tu Drive y copiá su ID desde la URL (`https://drive.google.com/drive/folders/<ID>`) a la Script Property `MEDIA_FOLDER_ID`.
+- **Comportamiento de compartido:** un archivo de un post `published` + `public` se comparte "cualquiera con el enlace"; cualquier otro estado lo deja privado. Esto se re-sincroniza cada vez que cambia el `status`/`visibility` del post, o cuando se borra (ver `docs/api.md` → "Media").
+- **Riesgo del scope completo de Drive:** el scope `drive` (no `drive.file`) le da al script acceso a *todo* el Drive de la cuenta que lo autoriza, no solo a `MEDIA_FOLDER_ID`. La mitigación de este proyecto es de diseño: todas las operaciones de archivo pasan por `StorageAdapter` y solo usan ids guardados en la sheet `media`, nunca un id arbitrario del Drive del usuario. Aun así, **para una demo pública se recomienda una cuenta de Google dedicada** (no la cuenta personal del dueño), separada del resto de tus archivos.
+- `setSharing(ANYONE_WITH_LINK)` puede estar bloqueado por política de administrador en cuentas de Google Workspace; las cuentas Gmail personales lo permiten sin restricciones.
 
 ## Triggers (disparadores)
 
