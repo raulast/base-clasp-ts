@@ -4,7 +4,9 @@ import type { LockAdapter } from '../core/lock-adapter.ts';
 import { Router } from '../core/router.ts';
 import { createAuthController } from './controllers/auth.controller.ts';
 import { createPageController } from './controllers/page.controller.ts';
-import { requireAuth } from './middleware/auth.middleware.ts';
+import { createPostsController } from './controllers/posts.controller.ts';
+import { createTagsController } from './controllers/tags.controller.ts';
+import { requireAuth, optionalAuth } from './middleware/auth.middleware.ts';
 
 export interface RouterDeps {
   adapter: SheetAdapter;
@@ -24,12 +26,24 @@ export function createRouter({ adapter, crypto, getSecret, now, lock, getAppUrl 
   router.get('/profile', pages.profile);
 
   const auth = createAuthController({ adapter, crypto, getSecret, now, lock });
+  const posts = createPostsController({ adapter, lock, now });
+  const tags = createTagsController({ adapter, lock, now });
   const mustAuth = [requireAuth({ adapter, crypto, getSecret, now })];
+  const mayAuth = [optionalAuth({ adapter, crypto, getSecret, now })];
 
   router.group('/api/v1', [], (group) => {
     group.post('/auth/register', auth.register);
     group.post('/auth/login', auth.login);
     group.get('/auth/me', auth.me, mustAuth);
+
+    group.get('/posts', posts.list, mayAuth);
+    group.get('/posts/:idOrSlug', posts.show, mayAuth);
+    group.post('/posts', posts.create, mustAuth);
+    group.patch('/posts/:id', posts.update, mustAuth);
+    group.delete('/posts/:id', posts.remove, mustAuth);
+
+    group.get('/tags', tags.list);
+    group.post('/tags', tags.create, mustAuth);
   });
 
   return router;
