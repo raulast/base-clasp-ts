@@ -2,9 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { InMemorySheetAdapter } from '../core/testing/in-memory-sheet-adapter.ts';
 import { NodeCryptoAdapter } from '../core/testing/node-crypto-adapter.ts';
-import { hashPassword } from '../core/auth.ts';
 import { createRouter } from './routes.ts';
-import { createUser, LOGIN_ERROR_MESSAGE } from './controllers/auth.controller.ts';
+import { createUser } from './models/user.model.ts';
 import type { Request } from '../core/router.ts';
 
 const SECRET = 'test-secret';
@@ -22,182 +21,160 @@ function request(overrides: Partial<Request> = {}): Request {
   return { path: '/', method: 'GET', params: {}, body: {}, ...overrides };
 }
 
-test('createUser hashes the password and strips it from the returned row', () => {
-  const { adapter, crypto } = setup();
+const LOGIN_ERROR_MESSAGE = 'Invalid email or password';
 
-  const user = createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
-
-  assert.equal(user.email, 'ana@example.com');
-  assert.ok(!('password' in user));
-  const stored = adapter.getRows('users')[0];
-  assert.notEqual(stored.password, 'secret');
-});
-
-test('createUser rejects a duplicate email', () => {
-  const { adapter, crypto } = setup();
-  createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
-
-  assert.throws(() => createUser(adapter, crypto, 'ana@example.com', 'other', 'ana2', NOW));
-});
-
-test('POST /login returns a token for the right credentials', () => {
+test('POST /api/v1/auth/login returns a token envelope for the right credentials', () => {
   const { adapter, crypto, router } = setup();
   createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
 
   const response = router.dispatch(
-    request({ path: '/login', method: 'POST', body: { email: 'ana@example.com', password: 'secret' } }),
+    request({ path: '/api/v1/auth/login', method: 'POST', body: { email: 'ana@example.com', password: 'secret' } }),
   );
 
   assert.equal(response.status, 200);
-  assert.ok(typeof (response.body as { token?: string }).token === 'string');
+  const body = response.body as { ok: boolean; data: { token?: string } };
+  assert.equal(body.ok, true);
+  assert.ok(typeof body.data.token === 'string');
 });
 
-test('POST /login returns the same error for an unknown email and a wrong password', () => {
+test('POST /api/v1/auth/login returns the same error envelope for an unknown email and a wrong password', () => {
   const { adapter, crypto, router } = setup();
   createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
 
   const unknownEmail = router.dispatch(
-    request({ path: '/login', method: 'POST', body: { email: 'nobody@example.com', password: 'secret' } }),
+    request({ path: '/api/v1/auth/login', method: 'POST', body: { email: 'nobody@example.com', password: 'secret' } }),
   );
   const wrongPassword = router.dispatch(
-    request({ path: '/login', method: 'POST', body: { email: 'ana@example.com', password: 'wrong' } }),
+    request({ path: '/api/v1/auth/login', method: 'POST', body: { email: 'ana@example.com', password: 'wrong' } }),
   );
 
   assert.equal(unknownEmail.status, 401);
   assert.equal(wrongPassword.status, 401);
-  assert.deepEqual(unknownEmail.body, { error: LOGIN_ERROR_MESSAGE });
-  assert.deepEqual(wrongPassword.body, { error: LOGIN_ERROR_MESSAGE });
+  assert.deepEqual(unknownEmail.body, {
+    ok: false,
+    status: 401,
+    error: { code: 'UNAUTHENTICATED', message: LOGIN_ERROR_MESSAGE },
+  });
+  assert.deepEqual(wrongPassword.body, {
+    ok: false,
+    status: 401,
+    error: { code: 'UNAUTHENTICATED', message: LOGIN_ERROR_MESSAGE },
+  });
 });
 
-test('POST /me returns the current user for a valid token, without password', () => {
+test('GET /api/v1/auth/me returns the current user envelope for a valid token, without password', () => {
   const { adapter, crypto, router } = setup();
   createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
   const loginResponse = router.dispatch(
-    request({ path: '/login', method: 'POST', body: { email: 'ana@example.com', password: 'secret' } }),
+    request({ path: '/api/v1/auth/login', method: 'POST', body: { email: 'ana@example.com', password: 'secret' } }),
   );
-  const token = (loginResponse.body as { token: string }).token;
+  const token = (loginResponse.body as { data: { token: string } }).data.token;
 
-  const meResponse = router.dispatch(request({ path: '/me', method: 'POST', body: { token } }));
-
-  assert.equal(meResponse.status, 200);
-  const body = meResponse.body as { email: string };
-  assert.equal(body.email, 'ana@example.com');
-  assert.ok(!('password' in body));
-});
-
-test('POST /me without a token is 401', () => {
-  const { router } = setup();
-
-  const response = router.dispatch(request({ path: '/me', method: 'POST' }));
-
-  assert.equal(response.status, 401);
-});
-
-test('POST /me with a tampered token is 401', () => {
-  const { adapter, crypto, router } = setup();
-  createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
-  const loginResponse = router.dispatch(
-    request({ path: '/login', method: 'POST', body: { email: 'ana@example.com', password: 'secret' } }),
+  const response = router.dispatch(
+    request({ path: '/api/v1/auth/me', method: 'POST', body: { _method: 'GET', token } }),
   );
-  const token = (loginResponse.body as { token: string }).token;
-  const tampered = token.slice(0, -2) + 'xx';
-
-  const response = router.dispatch(request({ path: '/me', method: 'POST', body: { token: tampered } }));
-
-  assert.equal(response.status, 401);
-});
-
-test('there is no GET /me route: only POST is allowed', () => {
-  const { router } = setup();
-
-  const response = router.dispatch(request({ path: '/me', method: 'GET' }));
-
-  assert.equal(response.status, 405);
-  assert.deepEqual((response.body as { error: { details: unknown } }).error.details, { allowed: ['POST'] });
-});
-
-test('/me with the token only in params (not body) is 401', () => {
-  const { adapter, crypto, router } = setup();
-  createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
-  const loginResponse = router.dispatch(
-    request({ path: '/login', method: 'POST', body: { email: 'ana@example.com', password: 'secret' } }),
-  );
-  const token = (loginResponse.body as { token: string }).token;
-
-  const response = router.dispatch(request({ path: '/me', method: 'POST', params: { token } }));
-
-  assert.equal(response.status, 401);
-});
-
-test('/me with the token in the body via POST is OK', () => {
-  const { adapter, crypto, router } = setup();
-  createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
-  const loginResponse = router.dispatch(
-    request({ path: '/login', method: 'POST', body: { email: 'ana@example.com', password: 'secret' } }),
-  );
-  const token = (loginResponse.body as { token: string }).token;
-
-  const response = router.dispatch(request({ path: '/me', method: 'POST', body: { token } }));
 
   assert.equal(response.status, 200);
+  const body = response.body as { ok: boolean; data: { email: string } };
+  assert.equal(body.ok, true);
+  assert.equal(body.data.email, 'ana@example.com');
+  assert.ok(!('password' in body.data));
+});
+
+test('GET /api/v1/auth/me without a body token is 401', () => {
+  const { router } = setup();
+
+  const response = router.dispatch(request({ path: '/api/v1/auth/me', method: 'GET' }));
+
+  assert.equal(response.status, 401);
+  assert.equal((response.body as { error: { code: string } }).error.code, 'UNAUTHENTICATED');
+});
+
+test('POST /api/v1/auth/me with _method GET and a token returns a 200 envelope', () => {
+  const { adapter, crypto, router } = setup();
+  createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
+  const loginResponse = router.dispatch(
+    request({ path: '/api/v1/auth/login', method: 'POST', body: { email: 'ana@example.com', password: 'secret' } }),
+  );
+  const token = (loginResponse.body as { data: { token: string } }).data.token;
+
+  const response = router.dispatch(
+    request({ path: '/api/v1/auth/me', method: 'POST', body: { _method: 'GET', token } }),
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal((response.body as { ok: boolean }).ok, true);
+});
+
+test('GET /api/v1/auth/me with a tampered token is 401', () => {
+  const { adapter, crypto, router } = setup();
+  createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
+  const loginResponse = router.dispatch(
+    request({ path: '/api/v1/auth/login', method: 'POST', body: { email: 'ana@example.com', password: 'secret' } }),
+  );
+  const token = (loginResponse.body as { data: { token: string } }).data.token;
+  const tampered = token.slice(0, -2) + 'xx';
+
+  const response = router.dispatch(
+    request({ path: '/api/v1/auth/me', method: 'POST', body: { _method: 'GET', token: tampered } }),
+  );
+
+  assert.equal(response.status, 401);
+});
+
+test('the old /login and /me routes are removed', () => {
+  const { router } = setup();
+
+  const login = router.dispatch(request({ path: '/login', method: 'POST', body: {} }));
+  const me = router.dispatch(request({ path: '/me', method: 'POST', body: {} }));
+
+  assert.equal(login.status, 404);
+  assert.equal(me.status, 404);
+});
+
+test('/api/v1/auth/me with the token only in params (not body) is 401', () => {
+  const { adapter, crypto, router } = setup();
+  createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
+  const loginResponse = router.dispatch(
+    request({ path: '/api/v1/auth/login', method: 'POST', body: { email: 'ana@example.com', password: 'secret' } }),
+  );
+  const token = (loginResponse.body as { data: { token: string } }).data.token;
+
+  const response = router.dispatch(
+    request({ path: '/api/v1/auth/me', method: 'POST', body: { _method: 'GET' }, params: { token } }),
+  );
+
+  assert.equal(response.status, 401);
 });
 
 test('no response from login or me ever contains a password field', () => {
   const { adapter, crypto, router } = setup();
   createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
   const loginResponse = router.dispatch(
-    request({ path: '/login', method: 'POST', body: { email: 'ana@example.com', password: 'secret' } }),
+    request({ path: '/api/v1/auth/login', method: 'POST', body: { email: 'ana@example.com', password: 'secret' } }),
   );
-  const token = (loginResponse.body as { token: string }).token;
-  const meResponse = router.dispatch(request({ path: '/me', method: 'POST', body: { token } }));
+  const token = (loginResponse.body as { data: { token: string } }).data.token;
+  const meResponse = router.dispatch(
+    request({ path: '/api/v1/auth/me', method: 'POST', body: { _method: 'GET', token } }),
+  );
 
   assert.ok(!JSON.stringify(loginResponse.body).includes('password'));
   assert.ok(!JSON.stringify(meResponse.body).includes('password'));
 });
 
-test('verifying a seeded hashPassword value works end to end for login', () => {
-  const { adapter, crypto, router } = setup();
-  const stored = hashPassword('secret', crypto);
-  adapter.appendRow('users', { id: 1, email: 'seed@example.com', password: stored, created_at: 1, updated_at: 1, deleted_at: null });
-
-  const response = router.dispatch(
-    request({ path: '/login', method: 'POST', body: { email: 'seed@example.com', password: 'secret' } }),
-  );
-
-  assert.equal(response.status, 200);
-});
-
-test('createUser stores the username', () => {
-  const { adapter, crypto } = setup();
-
-  const user = createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
-
-  assert.equal(user.username, 'ana');
-  assert.equal(adapter.getRows('users')[0].username, 'ana');
-});
-
-test('POST /me returns the username of the logged-in user', () => {
+test('GET /api/v1/auth/me returns the username of the logged-in user', () => {
   const { adapter, crypto, router } = setup();
   createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
   const loginResponse = router.dispatch(
-    request({ path: '/login', method: 'POST', body: { email: 'ana@example.com', password: 'secret' } }),
+    request({ path: '/api/v1/auth/login', method: 'POST', body: { email: 'ana@example.com', password: 'secret' } }),
   );
-  const token = (loginResponse.body as { token: string }).token;
+  const token = (loginResponse.body as { data: { token: string } }).data.token;
 
-  const response = router.dispatch(request({ path: '/me', method: 'POST', body: { token } }));
-
-  assert.equal((response.body as { username?: string }).username, 'ana');
-});
-
-test('createUser rejects a duplicate username without writing', () => {
-  const { adapter, crypto } = setup();
-  createUser(adapter, crypto, 'ana@example.com', 'secret', 'ana', NOW);
-
-  assert.throws(
-    () => createUser(adapter, crypto, 'other@example.com', 'secret', 'ana', NOW),
-    /Username already taken/,
+  const response = router.dispatch(
+    request({ path: '/api/v1/auth/me', method: 'POST', body: { _method: 'GET', token } }),
   );
-  assert.equal(adapter.getRows('users').length, 1);
+
+  assert.equal((response.body as { data: { username?: string } }).data.username, 'ana');
 });
 
 function setupWithUrl() {

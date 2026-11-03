@@ -88,12 +88,12 @@
         setBusy(true);
         google.script.run
           .withSuccessHandler(function (result) {
-            if (!result || !result.token) {
+            if (!result || !result.ok) {
               setBusy(false);
-              showError((result && result.error) || 'Could not sign in.');
+              showError((result && result.error && result.error.message) || 'Could not sign in.');
               return;
             }
-            AppSession.setToken(result.token);
+            AppSession.setToken(result.data.token);
             AppSession.loadUser(
               function (user) {
                 setBusy(false);
@@ -110,7 +110,7 @@
             setBusy(false);
             showError('The server is not available. Try again later.');
           })
-          .api('/login', { email: emailInput.value, password: passwordInput.value });
+          .api('/api/v1/auth/login', { email: emailInput.value, password: passwordInput.value });
       });
 
       AppSession.loadUser(showLoggedIn, showLoginForm);

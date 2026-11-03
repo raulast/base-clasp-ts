@@ -36,16 +36,16 @@
         onMissing();
       };
       google.script.run
-        .withSuccessHandler(function (user) {
-          if (user && user.email) {
-            renderHeader(user);
-            onUser(user);
+        .withSuccessHandler(function (result) {
+          if (result && result.ok && result.data && result.data.email) {
+            renderHeader(result.data);
+            onUser(result.data);
           } else {
             fail();
           }
         })
         .withFailureHandler(fail)
-        .api('/me', { token: token });
+        .api('/api/v1/auth/me', { _method: 'GET', token: token });
     }
 
     // The Sign out link navigates to the login page; the token is cleared first.

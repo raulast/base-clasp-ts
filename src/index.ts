@@ -6,7 +6,7 @@ import { GasSheetAdapter } from './core/gas-sheet-adapter.ts';
 import { GasCryptoAdapter, getScriptSecret } from './core/gas-crypto-adapter.ts';
 import { GasOutputAdapter, includeHtml } from './core/gas-output-adapter.ts';
 import { createRouter } from './app/routes.ts';
-import { createUser as createUserWithAdapter } from './app/controllers/auth.controller.ts';
+import { createUser as createUserWithAdapter } from './app/models/user.model.ts';
 import { migrations } from './app/migrations/index.ts';
 import { isAdmin } from './app/admin.ts';
 
