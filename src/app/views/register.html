@@ -85,7 +85,7 @@
         })
           .then(function (result) {
             AppSession.setToken(result.data.token);
-            window.top.location.href = App.url('/');
+            App.go(App.url('/'));
           })
           .catch(function (error) {
             setBusy(false);
@@ -95,7 +95,7 @@
 
       AppSession.loadUser(
         function () {
-          window.top.location.href = App.url('/');
+          App.go(App.url('/'));
         },
         function () {},
       );

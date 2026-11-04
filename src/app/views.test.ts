@@ -61,6 +61,22 @@ for (const file of htmlFiles) {
   });
 
   const scripts = extractScriptBlocks(content);
+
+  test(`${relative} puts no server values inside <script> (they go in data-* attributes)`, () => {
+    for (const script of scripts) {
+      assert.ok(!/<\?/.test(script), `${relative} has a scriptlet inside a <script> block`);
+    }
+  });
+
+  test(`${relative} never reads the parent or top window (cross-origin from the GAS iframe)`, () => {
+    for (const script of scripts) {
+      assert.ok(!/\.search\b/.test(script), `${relative} reads location.search`);
+      assert.ok(!/window\.parent\b/.test(script), `${relative} touches window.parent`);
+      if (!relative.endsWith(path.join('partials', 'client.html'))) {
+        assert.ok(!/window\.top\b/.test(script), `${relative} touches window.top outside App.go`);
+      }
+    }
+  });
   for (let index = 0; index < scripts.length; index += 1) {
     test(`${relative} script block ${index} is syntactically valid`, () => {
       // Scriptlets (<?= ... ?>) are evaluated server-side before the script reaches the browser,

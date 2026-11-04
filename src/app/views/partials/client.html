@@ -1,8 +1,10 @@
+<div id="app-config" data-app-url="<?= appUrl ?>" hidden></div>
 <script>
   // Thin client over google.script.run: every call goes through api(route, body) and resolves/rejects
   // the same envelope shape the server returns, so pages never touch google.script.run directly.
   var App = (function () {
-    var appUrl = '<?= appUrl ?>';
+    // Server values arrive as data-* attributes: escaping of scriptlets inside <script> is not specified by GAS.
+    var appUrl = document.getElementById('app-config').getAttribute('data-app-url') || '';
 
     function call(route, body) {
       return new Promise(function (resolve, reject) {
@@ -104,6 +106,17 @@
       return isNaN(date.getTime()) ? '' : date.toLocaleDateString();
     }
 
-    return { appUrl: appUrl, call: call, get: get, send: send, url: url, el: el, paragraphs: paragraphs, formatDate: formatDate };
+    // Navigating the top window is allowed from the GAS iframe (reading its URL is not). If the browser still
+    // blocks it, fall back to a link the user can click, which <base target="_top"> opens in the top window.
+    function go(target) {
+      try {
+        window.top.location.href = target;
+      } catch (error) {
+        var notice = el('p', {}, [el('a', { href: target, target: '_top', text: 'Continue' }, [])]);
+        document.body.appendChild(notice);
+      }
+    }
+
+    return { appUrl: appUrl, call: call, get: get, send: send, url: url, el: el, paragraphs: paragraphs, formatDate: formatDate, go: go };
   })();
 </script>

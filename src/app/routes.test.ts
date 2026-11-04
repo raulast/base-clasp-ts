@@ -235,7 +235,7 @@ test('GET / renders the home view with the app URL for navigation', () => {
   assert.deepEqual(response.body, {
     kind: 'view',
     name: 'app/views/home',
-    data: { appName: 'Gas Fullstack Core', appUrl: 'https://script.google.com/macros/s/ID/dev' },
+    data: { appName: 'Gas Fullstack Core', appUrl: 'https://script.google.com/macros/s/ID/dev', tag: '', page: '' },
   });
 });
 
@@ -344,5 +344,18 @@ test('GET /admin/tags renders the admin tags view with the app URL for navigatio
     kind: 'view',
     name: 'app/views/admin-tags',
     data: { appName: 'Gas Fullstack Core', appUrl: 'https://script.google.com/macros/s/ID/dev' },
+  });
+});
+
+test('GET / passes the tag and page query params to the home view', () => {
+  const { router } = setupWithUrl();
+
+  const response = router.dispatch(request({ path: '/', params: { route: '/', tag: 'tutorial', page: '2' } }));
+
+  assert.deepEqual((response.body as { data: Record<string, unknown> }).data, {
+    appName: 'Gas Fullstack Core',
+    appUrl: 'https://script.google.com/macros/s/ID/dev',
+    tag: 'tutorial',
+    page: '2',
   });
 });

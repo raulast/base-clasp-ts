@@ -19,22 +19,13 @@
       </nav>
     </main>
 
+    <div id="home-config" data-tag="<?= tag ?>" data-page="<?= page ?>" hidden></div>
     <?!= include('app/views/partials/client', { appUrl: appUrl }) ?>
     <?!= include('app/views/partials/session') ?>
     <script>
-      var query = {};
-      (function () {
-        var pairs = window.top.location.search.replace(/^\?/, '').split('&');
-        for (var i = 0; i < pairs.length; i++) {
-          var pair = pairs[i].split('=');
-          if (pair[0]) {
-            query[decodeURIComponent(pair[0])] = decodeURIComponent(pair[1] || '');
-          }
-        }
-      })();
-
-      var currentTag = query.tag || '';
-      var currentPage = Number(query.page) || 1;
+      var homeConfig = document.getElementById('home-config');
+      var currentTag = homeConfig.getAttribute('data-tag') || '';
+      var currentPage = Number(homeConfig.getAttribute('data-page')) || 1;
 
       var loading = document.getElementById('loading');
       var empty = document.getElementById('empty');

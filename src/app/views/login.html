@@ -64,7 +64,7 @@
         App.send('/api/v1/auth/login', 'POST', { email: emailInput.value, password: passwordInput.value })
           .then(function (result) {
             AppSession.setToken(result.data.token);
-            window.top.location.href = App.url('/');
+            App.go(App.url('/'));
           })
           .catch(function (error) {
             setBusy(false);
@@ -74,7 +74,7 @@
 
       AppSession.loadUser(
         function () {
-          window.top.location.href = App.url('/');
+          App.go(App.url('/'));
         },
         function () {},
       );

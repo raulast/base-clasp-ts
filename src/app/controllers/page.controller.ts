@@ -6,7 +6,7 @@ export interface PageControllerDeps {
 }
 
 export interface PageController {
-  home: () => Response;
+  home: (request: Request) => Response;
   postDetail: (request: Request) => Response;
   login: () => Response;
   register: () => Response;
@@ -20,7 +20,14 @@ export interface PageController {
 const APP_NAME = 'Gas Fullstack Core';
 
 export function createPageController({ getAppUrl }: PageControllerDeps): PageController {
-  const home = (): Response => view('app/views/home', { appName: APP_NAME, appUrl: getAppUrl() });
+  // The browser cannot read the top window URL from the GAS iframe, so the server passes the query params.
+  const home = (request: Request): Response =>
+    view('app/views/home', {
+      appName: APP_NAME,
+      appUrl: getAppUrl(),
+      tag: String(request.params.tag ?? ''),
+      page: String(request.params.page ?? ''),
+    });
   const postDetail = (request: Request): Response =>
     view('app/views/post', { appName: APP_NAME, appUrl: getAppUrl(), slug: request.pathParams?.slug ?? '' });
   const login = (): Response => view('app/views/login', { appName: APP_NAME, appUrl: getAppUrl() });

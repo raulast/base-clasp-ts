@@ -43,10 +43,11 @@
       </section>
     </main>
 
+    <div id="post-config" data-slug="<?= slug ?>" hidden></div>
     <?!= include('app/views/partials/client', { appUrl: appUrl }) ?>
     <?!= include('app/views/partials/session') ?>
     <script>
-      var slug = '<?= slug ?>';
+      var slug = document.getElementById('post-config').getAttribute('data-slug') || '';
       var postId = null;
       var commentsPage = 1;
 

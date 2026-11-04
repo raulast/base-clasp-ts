@@ -80,10 +80,11 @@
       </article>
     </main>
 
+    <div id="editor-config" data-id="<?= id ?>" hidden></div>
     <?!= include('app/views/partials/client', { appUrl: appUrl }) ?>
     <?!= include('app/views/partials/session') ?>
     <script>
-      var postId = '<?= id ?>';
+      var postId = document.getElementById('editor-config').getAttribute('data-id') || '';
       var isEdit = postId.length > 0;
 
       // Mirrors core/media-rules.ts; the server stays authoritative.
@@ -360,10 +361,10 @@
         request
           .then(function (result) {
             if (!isEdit) {
-              window.top.location.href = App.url('/dashboard/posts/' + result.data.id + '/edit');
+              App.go(App.url('/dashboard/posts/' + result.data.id + '/edit'));
               return;
             }
-            window.top.location.href = App.url('/dashboard');
+            App.go(App.url('/dashboard'));
           })
           .catch(showErrors);
       });
