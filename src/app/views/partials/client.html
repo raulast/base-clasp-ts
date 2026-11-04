@@ -106,15 +106,19 @@
       return isNaN(date.getTime()) ? '' : date.toLocaleDateString();
     }
 
-    // Navigating the top window is allowed from the GAS iframe (reading its URL is not). If the browser still
-    // blocks it, fall back to a link the user can click, which <base target="_top"> opens in the top window.
-    function go(target) {
-      try {
-        window.top.location.href = target;
-      } catch (error) {
-        var notice = el('p', {}, [el('a', { href: target, target: '_top', text: 'Continue' }, [])]);
-        document.body.appendChild(notice);
+    // The GAS sandbox only lets the iframe navigate the top window on a direct user click, and a scripted
+    // navigation after an async google.script.run callback is blocked silently. So instead of redirecting,
+    // show a notice with a real link: clicking it is a user action, and target="_top" opens it in the top window.
+    function go(target, message) {
+      var previous = document.getElementById('app-continue');
+      if (previous) {
+        previous.parentNode.removeChild(previous);
       }
+      var link = el('a', { href: target, target: '_top', role: 'button', text: 'Continue' }, []);
+      var notice = el('article', { id: 'app-continue' }, [el('p', { text: message || '' }, []), link]);
+      var host = document.querySelector('main') || document.body;
+      host.insertBefore(notice, host.firstChild);
+      link.focus();
     }
 
     return { appUrl: appUrl, call: call, get: get, send: send, url: url, el: el, paragraphs: paragraphs, formatDate: formatDate, go: go };

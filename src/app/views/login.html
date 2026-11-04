@@ -64,7 +64,8 @@
         App.send('/api/v1/auth/login', 'POST', { email: emailInput.value, password: passwordInput.value })
           .then(function (result) {
             AppSession.setToken(result.data.token);
-            App.go(App.url('/'));
+            form.hidden = true;
+            App.go(App.url('/'), 'You are signed in.');
           })
           .catch(function (error) {
             setBusy(false);
@@ -74,7 +75,8 @@
 
       AppSession.loadUser(
         function () {
-          App.go(App.url('/'));
+          form.hidden = true;
+          App.go(App.url('/'), 'You are already signed in.');
         },
         function () {},
       );

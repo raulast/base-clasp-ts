@@ -85,7 +85,8 @@
         })
           .then(function (result) {
             AppSession.setToken(result.data.token);
-            App.go(App.url('/'));
+            form.hidden = true;
+            App.go(App.url('/'), 'Your account was created and you are signed in.');
           })
           .catch(function (error) {
             setBusy(false);
@@ -95,7 +96,8 @@
 
       AppSession.loadUser(
         function () {
-          App.go(App.url('/'));
+          form.hidden = true;
+          App.go(App.url('/'), 'You are already signed in.');
         },
         function () {},
       );

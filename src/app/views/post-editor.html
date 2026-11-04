@@ -361,10 +361,11 @@
         request
           .then(function (result) {
             if (!isEdit) {
-              App.go(App.url('/dashboard/posts/' + result.data.id + '/edit'));
+              form.hidden = true;
+              App.go(App.url('/dashboard/posts/' + result.data.id + '/edit'), 'Post created as a draft. Continue to add media and publish it.');
               return;
             }
-            App.go(App.url('/dashboard'));
+            App.go(App.url('/dashboard'), 'Post saved. Continue to the dashboard, or keep editing below.');
           })
           .catch(showErrors);
       });

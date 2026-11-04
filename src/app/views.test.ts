@@ -72,9 +72,10 @@ for (const file of htmlFiles) {
     for (const script of scripts) {
       assert.ok(!/\.search\b/.test(script), `${relative} reads location.search`);
       assert.ok(!/window\.parent\b/.test(script), `${relative} touches window.parent`);
-      if (!relative.endsWith(path.join('partials', 'client.html'))) {
-        assert.ok(!/window\.top\b/.test(script), `${relative} touches window.top outside App.go`);
-      }
+      // The GAS sandbox only allows top navigation on a direct user click; scripted navigation after an async
+      // google.script.run callback is blocked silently, so views must render a link instead (App.go).
+      assert.ok(!/window\.top\b/.test(script), `${relative} touches window.top`);
+      assert.ok(!/window\.open\s*\(/.test(script), `${relative} uses window.open`);
     }
   });
   for (let index = 0; index < scripts.length; index += 1) {
