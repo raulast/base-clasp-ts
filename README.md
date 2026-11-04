@@ -97,6 +97,8 @@ https://script.google.com/home/projects/<SCRIPT_ID>/edit
 
    Los secretos viven en Script Properties, nunca en el código ni en la sheet. Si falta alguno, o está vacío, la función que lo necesita falla con `Missing script property: <NOMBRE>`.
 
+   Cada request autenticado lee `JWT_SECRET`, y las lecturas de Properties tienen una cuota diaria (50.000 por día en cuentas Gmail). Por eso `getScriptSecret` guarda los valores en `CacheService` durante 10 minutos (`SECRET_CACHE_SECONDS`): si cambiás o rotás un secreto, el valor nuevo puede tardar hasta 10 minutos en aplicarse. Si el caché falla o perdió el dato, se vuelve a leer Properties.
+
 ## Estructura del proyecto
 
 ```

@@ -25,10 +25,39 @@ export class GasCryptoAdapter implements CryptoAdapter {
   }
 }
 
+// Properties reads count against a daily quota (50,000 on consumer accounts) and every authenticated
+// request reads JWT_SECRET, so secrets are cached briefly. A rotated secret takes effect within this window.
+export const SECRET_CACHE_SECONDS = 600;
+
+function secretCache(): GoogleAppsScript.Cache.Cache | null {
+  try {
+    return CacheService.getScriptCache();
+  } catch {
+    return null;
+  }
+}
+
+// The cache is only a shortcut: Apps Script may evict entries at any time, so any miss or cache error
+// falls back to Script Properties, which stay the source of truth.
 export function getScriptSecret(name: string): string {
+  const key = `script-secret:${name}`;
+  const cache = secretCache();
+  try {
+    const cached = cache?.get(key);
+    if (cached) {
+      return cached;
+    }
+  } catch {
+    // fall through to Properties
+  }
   const value = PropertiesService.getScriptProperties().getProperty(name);
   if (!value) {
     throw new Error(`Missing script property: ${name}`);
+  }
+  try {
+    cache?.put(key, value, SECRET_CACHE_SECONDS);
+  } catch {
+    // caching is best effort
   }
   return value;
 }
